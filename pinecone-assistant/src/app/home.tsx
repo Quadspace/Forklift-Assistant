@@ -184,7 +184,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
         </div>
       ) : assistantExists ? (
         <div className="w-full max-w-6xl xl:max-w-7xl">
-          <h1 className="text-2xl font-bold mb-4 text-indigo-900 dark:text-indigo-100"><a href="https://www.pinecone.io/blog/pinecone-assistant/" target="_blank" rel="noopener noreferrer" className="hover:underline">Pinecone Assistant</a>: {assistantName} <span className="text-green-500">●</span></h1>
+          <h1 className="text-2xl font-bold mb-4 text-indigo-900 dark:text-indigo-100"><a href="https://www.industrialengineer.ai/blog/industrialengineer-ai-assistant/" target="_blank" rel="noopener noreferrer" className="hover:underline">Industrial Engineer.ai Assistant</a>: {assistantName} <span className="text-green-500">●</span></h1>
           <div className="flex flex-col gap-4">
             <div className="w-full">
               <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg mb-4 h-[calc(100vh-500px)] overflow-y-auto">
@@ -195,10 +195,10 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                         {message.role === 'user' ? (
                           <span className="text-2xl">👤</span>
                         ) : (
-                          <a href="https://www.pinecone.io/blog/pinecone-assistant/" target="_blank" rel="noopener noreferrer">
+                          <a href="https://www.industrialengineer.ai/blog/industrialengineer-ai-assistant/" target="_blank" rel="noopener noreferrer">
                             <img
-                              src="/pinecone-logo.png"
-                              alt="Pinecone Assistant"
+                              src="/industrialengineer-ai-logo.png"
+                              alt="Industrial Engineer.ai Assistant"
                               className="w-6 h-6 rounded-full object-cover"
                             />
                           </a>
@@ -242,7 +242,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  className="flex-grow p-2 border rounded-l-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="flex-grow p-2 border rounded-l-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-black dark:text-white"
                   placeholder="Type your message..."
                   disabled={isStreaming}
                 />
@@ -285,7 +285,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           <div className="mt-4 text-sm">
             <p className="font-semibold">To resolve this issue:</p>
             <ol className="list-decimal list-inside mt-2 space-y-2">
-              <li>Create a Pinecone Assistant at <a href="https://app.pinecone.io" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">https://app.pinecone.io</a></li>
+              <li>Create a Industrial Engineer.ai Assistant at <a href="https://app.industrialengineer.ai" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">https://app.industrialengineer.ai</a></li>
               <li>Export the environment variable <code className="bg-red-200 px-1 rounded">PINECONE_ASSISTANT_NAME</code> with the value of your assistant&apos;s name</li>
               <li>Restart your application</li>
             </ol>
@@ -293,11 +293,11 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
         </div>
       )}
       <div className="mt-8 text-sm text-gray-500 flex space-x-4">
-        <a href="https://www.pinecone.io/blog/pinecone-assistant/" target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 transition-colors">
-          ℹ️ What are Pinecone Assistants?
+        <a href="https://www.industrialengineer.ai/blog/industrialengineer-ai-assistant/" target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 transition-colors">
+          ℹ️ What are Industrial Engineer.ai Assistants?
         </a>
-        <a href="https://app.pinecone.io" target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 transition-colors">
-          🤖 Create your own Pinecone Assistant today
+        <a href="https://app.industrialengineer.ai" target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 transition-colors">
+          🤖 Create your own Industrial Engineer.ai Assistant today
         </a>
       </div>
     </main>

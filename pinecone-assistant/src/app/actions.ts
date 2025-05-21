@@ -15,7 +15,7 @@ export async function chat(messages: Message[]) {
 
   // Construct the full URL to the Pinecone Assistant API for the specific assistant 
   // indicated by the user
-  const url = `${process.env.PINECONE_ASSISTANT_URL}/${process.env.PINECONE_ASSISTANT_NAME}/chat/completions`
+  const url = `${process.env.PINECONE_ASSISTANT_URL}/chat/${process.env.PINECONE_ASSISTANT_NAME}/chat/completions`
 
   const eventSource = new EventSource(url, {
     method: 'POST',
