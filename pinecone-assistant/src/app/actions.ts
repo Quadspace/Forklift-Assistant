@@ -37,30 +37,37 @@ export async function chat(messages: Message[]) {
     console.log('Raw event.data:', event.data); // Log all incoming data
     try {
       const message = JSON.parse(event.data);
-      if (message?.choices[0]?.finish_reason) {
-        console.log('Stream finished by assistant.');
+      // Check for empty choices array first, as it might signify a specific end condition
+      if (message && Array.isArray(message.choices) && message.choices.length === 0) {
+        console.log('Stream finished: Received empty choices array.');
+        eventSource.close();
+        stream.done();
+      } else if (message?.choices[0]?.finish_reason) {
+        console.log('Stream finished by assistant with finish_reason:', message.choices[0].finish_reason);
         eventSource.close();
         stream.done();
       } else if (message?.choices[0]?.delta?.content) {
         stream.update(event.data);
       } else {
-        // Potentially empty but valid JSON, or unexpected structure
-        console.warn('Received message with no content or finish_reason:', message);
+        // Potentially empty but valid JSON, or unexpected structure not yet handled
+        console.warn('Received message with no content, finish_reason, or empty choices:', message);
       }
     } catch (e) {
       console.error('Error parsing event.data:', e);
       console.error('Problematic event.data content was:', event.data);
-      // Decide if/how to signal this specific error to the client if it's not a general connection error
-      // For now, we let it fall through to the main onerror or the client handles broken stream
+      // Consider if this parse error should also trigger stream.error()
+      // For now, allow it to potentially fall through to the main onerror if EventSource itself errors
     }
   };
 
   eventSource.onerror = (error: any) => { // Changed type to any to allow property access
     console.error('EventSource error details:', error);
-    // Log more properties if they exist
     if (error && typeof error === 'object') {
       for (const key in error) {
-        console.error(`Error object key ${key}:`, error[key]);
+        // Avoid logging verbose non-essential properties or functions
+        if (typeof error[key] !== 'function' && key !== 'target' && key !== 'currentTarget' && key !== 'srcElement') {
+            console.error(`Error object key ${key}:`, error[key]);
+        }
       }
     }
     if (error && error.status) { // extended-eventsource might provide status
