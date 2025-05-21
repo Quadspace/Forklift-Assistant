@@ -44,8 +44,13 @@ export async function chat(messages: Message[]) {
   };
 
   eventSource.onerror = (error) => {
-    console.error('EventSource error:', error);
-    eventSource.close();
+    console.error('EventSource error details:', error);
+    try {
+      eventSource.close();
+    } catch (e) {
+      console.warn('Error closing EventSource (might be already closed):', e);
+    }
+    stream.error(new Error('Pinecone API EventSource connection failed.'));
   };
 
   return { object: stream.value }
