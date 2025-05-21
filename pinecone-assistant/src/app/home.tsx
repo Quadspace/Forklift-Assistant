@@ -109,16 +109,12 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       timestamp: new Date().toISOString() 
     };
 
-    // Add the new user message to the local state
-    const updatedMessages = [...messages, newUserMessage];
-    setMessages(updatedMessages);
+    setMessages(prevMessages => [...prevMessages, newUserMessage]);
     setInput('');
     setIsStreaming(true);
 
     try {
-      // Map messages to include only role and content, and send the updated history
-      const messagesForApi = updatedMessages.map(({ role, content }) => ({ role, content }));
-      const { object } = await chat(messagesForApi);
+      const { object } = await chat([newUserMessage]);
       let accumulatedContent = '';
       const newAssistantMessage: Message = {
         id: uuidv4(),

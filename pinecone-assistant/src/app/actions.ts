@@ -23,7 +23,6 @@ export async function chat(messages: Message[]) {
     body: JSON.stringify({
       stream: true,
       messages,
-      model: 'claude-3.5-sonnet'
     }),
     headers: {
       Authorization: `Bearer ${process.env.PINECONE_API_KEY}`,
@@ -44,20 +43,14 @@ export async function chat(messages: Message[]) {
     }
   };
 
-  eventSource.onerror = (error: any) => {
-    console.error('EventSource error object:', error);
-    if (error && error.status) {
-      console.error('EventSource error status:', error.status);
-    }
-    if (error && error.message) {
-      console.error('EventSource error message:', error.message);
-    }
+  eventSource.onerror = (error) => {
+    console.error('EventSource error details:', error);
     try {
       eventSource.close();
     } catch (e) {
       console.warn('Error closing EventSource (might be already closed):', e);
     }
-    stream.error({ message: 'A connection error occurred with the assistant service. Check server logs for details.' });
+    stream.error({ message: 'A connection error occurred with the assistant service.' });
   };
 
   return { object: stream.value }
