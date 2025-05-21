@@ -23,6 +23,7 @@ export async function chat(messages: Message[]) {
     body: JSON.stringify({
       stream: true,
       messages,
+      model: 'claude-3.5-sonnet'
     }),
     headers: {
       Authorization: `Bearer ${process.env.PINECONE_API_KEY}`,
