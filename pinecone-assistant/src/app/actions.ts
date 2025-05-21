@@ -50,7 +50,7 @@ export async function chat(messages: Message[]) {
     } catch (e) {
       console.warn('Error closing EventSource (might be already closed):', e);
     }
-    stream.error(new Error('A connection error occurred with the assistant service.'));
+    stream.error({ message: 'A connection error occurred with the assistant service.' });
   };
 
   return { object: stream.value }
