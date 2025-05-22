@@ -6,7 +6,12 @@ import { chat } from './actions';
 import ReactMarkdown from 'react-markdown';
 import AssistantFiles from './components/AssistantFiles';
 import { File, Reference, Message } from './types';
-import { v4 as uuidv4 } from 'uuid'; 
+import { v4 as uuidv4 } from 'uuid';
+import { detectPageReferences, findMatchingPDFFile } from './utils/pdfReferences';
+import dynamic from 'next/dynamic';
+
+// Dynamically import the PDF modal component
+const PDFPreviewModal = dynamic(() => import('./components/PDFPreviewModal'), { ssr: false });
 
 interface HomeProps {
   initialShowAssistantFiles: boolean;
@@ -28,8 +33,16 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
   const [files, setFiles] = useState<File[]>([]);
   const [darkMode, setDarkMode] = useState(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [pdfModalState, setPdfModalState] = useState({
+    isOpen: false,
+    pdfUrl: '',
+    fileName: '',
+    startPage: 1,
+    endPage: undefined as number | undefined,
+    searchText: undefined as string | undefined
+  });
 
-  // Improved scroll function that only affects the chat container
+  // Simplified scroll function that ONLY targets the chat container with ID
   const scrollToBottom = useCallback(() => {
     // Clear any existing timeout
     if (scrollTimeoutRef.current) {
@@ -38,18 +51,19 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     
     // Set a new timeout to scroll after a short delay
     scrollTimeoutRef.current = setTimeout(() => {
-      if (chatContainerRef.current) {
+      const chatContainer = document.getElementById('chat-container');
+      if (chatContainer) {
         // Get the current scroll position
-        const scrollPosition = chatContainerRef.current.scrollTop;
-        const scrollHeight = chatContainerRef.current.scrollHeight;
-        const clientHeight = chatContainerRef.current.clientHeight;
+        const scrollPosition = chatContainer.scrollTop;
+        const scrollHeight = chatContainer.scrollHeight;
+        const clientHeight = chatContainer.clientHeight;
         
         // Only auto-scroll if user is already near the bottom
         // or if this is a new message sequence
         const isNearBottom = scrollHeight - scrollPosition - clientHeight < 100;
         
         if (isNearBottom || messages.length <= 2) {
-          chatContainerRef.current.scrollTop = scrollHeight;
+          chatContainer.scrollTop = scrollHeight;
         }
       }
     }, 100); // 100ms delay to batch scroll operations
@@ -64,10 +78,31 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     };
   }, []);
 
+  // Add back the effect to scroll when messages change
   useEffect(() => {
     // Scroll to bottom when messages change
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // Add chat container-specific scroll handling
+  useEffect(() => {
+    const chatContainer = document.getElementById('chat-container');
+    
+    if (chatContainer) {
+      // Event listener for chat container scroll
+      const handleChatScroll = (e: Event) => {
+        // Prevent any potential bubbling to parent elements
+        e.stopPropagation();
+      };
+      
+      // Only attach to the specific chat container
+      chatContainer.addEventListener('scroll', handleChatScroll);
+      
+      return () => {
+        chatContainer.removeEventListener('scroll', handleChatScroll);
+      };
+    }
+  }, []);
 
   useEffect(() => {
     // Check for dark mode preference
@@ -78,21 +113,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
         document.documentElement.classList.add('dark');
       }
       
-      // Prevent browser scrolling entirely
-      document.documentElement.style.overflow = 'hidden';
-      document.body.style.overflow = 'hidden';
-      document.body.style.position = 'fixed';
-      document.body.style.width = '100%';
-      document.body.style.height = '100%';
-      
-      // Cleanup function
-      return () => {
-        document.documentElement.style.overflow = '';
-        document.body.style.overflow = '';
-        document.body.style.position = '';
-        document.body.style.width = '';
-        document.body.style.height = '';
-      };
+      // REMOVE all document/body scroll locking
     }
   }, []);
 
@@ -226,8 +247,133 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     }
   };
 
+  const handleOpenPdfModal = (pdfUrl: string, fileName: string, startPage: number, endPage?: number, searchText?: string) => {
+    setPdfModalState({
+      isOpen: true,
+      pdfUrl,
+      fileName,
+      startPage,
+      endPage,
+      searchText
+    });
+  };
+
+  const handleClosePdfModal = () => {
+    setPdfModalState(prev => ({ ...prev, isOpen: false }));
+  };
+
+  // Function to render message with clickable PDF references
+  const renderMessageContent = (content: string, isAssistant: boolean) => {
+    if (!isAssistant) {
+      return (
+        <ReactMarkdown
+          components={{
+            a: ({ node, ...props }) => (
+              <a {...props} className="text-blue-600 dark:text-blue-400 hover:underline">
+                🔗 {props.children}
+              </a>
+            ),
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      );
+    }
+
+    // For assistant messages, look for PDF references
+    const references = detectPageReferences(content);
+    
+    if (references.length === 0) {
+      // If no references, render normally
+      return (
+        <ReactMarkdown
+          components={{
+            a: ({ node, ...props }) => (
+              <a {...props} className="text-blue-600 dark:text-blue-400 hover:underline">
+                🔗 {props.children}
+              </a>
+            ),
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      );
+    }
+
+    // If we have references, process the message
+    let processedContent = content;
+    // Process in reverse order to not affect indices
+    for (let i = references.length - 1; i >= 0; i--) {
+      const ref = references[i];
+      const matchingFile = findMatchingPDFFile(ref, files);
+      
+      if (matchingFile) {
+        const beforeRef = processedContent.substring(0, ref.matchIndex);
+        const afterRef = processedContent.substring(ref.matchIndex + ref.fullMatch.length);
+        const pdfUrl = `/api/files/${matchingFile.id}/content`;
+        
+        processedContent = `${beforeRef}[PDF: ${ref.fullMatch}](pdf:${pdfUrl}|${matchingFile.name}|${ref.startPage}|${ref.endPage || ref.startPage})${afterRef}`;
+      }
+    }
+
+    return (
+      <ReactMarkdown
+        components={{
+          a: ({ node, href, ...props }) => {
+            if (href?.startsWith('pdf:')) {
+              const [pdfUrl, fileName, startPage, endPage] = href.substring(4).split('|');
+              // Extract text to search for based on what was clicked
+              const refText = Array.isArray(props.children) 
+                ? props.children.filter(child => typeof child === 'string').join(' ') 
+                : typeof props.children === 'string' 
+                  ? props.children 
+                  : '';
+              
+              // Remove the "PDF: " prefix if it exists
+              const searchText = refText.replace(/^PDF:\s*/, '');
+              
+              return (
+                <a 
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleOpenPdfModal(
+                      pdfUrl, 
+                      fileName, 
+                      parseInt(startPage, 10), 
+                      endPage ? parseInt(endPage, 10) : undefined,
+                      searchText
+                    );
+                  }}
+                  className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline inline-flex items-center"
+                >
+                  <svg
+                    className="w-4 h-4 mr-1"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
+                  </svg>
+                  {props.children}
+                </a>
+              );
+            }
+            return (
+              <a {...props} href={href} className="text-blue-600 dark:text-blue-400 hover:underline">
+                🔗 {props.children}
+              </a>
+            );
+          },
+        }}
+      >
+        {processedContent}
+      </ReactMarkdown>
+    );
+  };
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 bg-gray-50 dark:bg-gray-900" style={{ height: '100vh', overflow: 'hidden' }}>
+    <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 bg-gray-50 dark:bg-gray-900">
       <button
         onClick={toggleDarkMode}
         className="absolute top-4 right-4 p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
@@ -253,7 +399,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           <h1 className="text-2xl font-bold mb-4 text-indigo-900 dark:text-indigo-100"><a href="https://www.industrialengineer.ai/blog/industrialengineer-ai-assistant/" target="_blank" rel="noopener noreferrer" className="hover:underline">Industrial Engineer.ai Assistant</a>: {assistantName} <span className="text-green-500">●</span></h1>
           <div className="flex flex-col gap-4">
             <div className="w-full">
-              <div ref={chatContainerRef} className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg mb-4 h-[calc(100vh-300px)] overflow-y-auto overflow-x-hidden">
+              <div id="chat-container" className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg mb-4 h-[calc(100vh-300px)] overflow-y-auto overflow-x-hidden">
                 {messages.map((message, index) => (
                   <div key={index} className={`mb-2 flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`flex items-start ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -273,17 +419,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                       <span className={`inline-block p-2 rounded-lg ${
                         message.role === 'user' ? 'bg-indigo-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                       } max-w-[80%] break-words`}>
-                        <ReactMarkdown
-                          components={{
-                            a: ({ node, ...props }) => (
-                              <a {...props} className="text-blue-600 dark:text-blue-400 hover:underline">
-                                🔗 {props.children}
-                              </a>
-                            ),
-                          }}
-                        >
-                          {message.content}
-                        </ReactMarkdown>
+                        {renderMessageContent(message.content, message.role === 'assistant')}
                         {message.references && showCitations && (
                           <div className="mt-2">
                             <ul>
@@ -366,6 +502,19 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           🤖 Create your own Industrial Engineer.ai Assistant today
         </a>
       </div>
+
+      {/* PDF Preview Modal */}
+      {pdfModalState.isOpen && (
+        <PDFPreviewModal 
+          isOpen={pdfModalState.isOpen}
+          onClose={handleClosePdfModal}
+          pdfUrl={pdfModalState.pdfUrl}
+          fileName={pdfModalState.fileName}
+          startPage={pdfModalState.startPage}
+          endPage={pdfModalState.endPage}
+          searchText={pdfModalState.searchText}
+        />
+      )}
     </main>
   );
 }
