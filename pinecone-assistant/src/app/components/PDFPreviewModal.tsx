@@ -33,7 +33,7 @@ export default function PDFPreviewModal({
   searchText,
 }: PDFPreviewModalProps) {
   const [numPages, setNumPages] = useState<number | null>(null);
-  const [currentPage, setCurrentPage] = useState<number>(startPage);
+  const [currentPage, setCurrentPage] = useState<number>(startPage || 1);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [pdfDocument, setPdfDocument] = useState<any>(null);
@@ -41,17 +41,36 @@ export default function PDFPreviewModal({
   const [highlightAreas, setHighlightAreas] = useState<any[]>([]);
   const pageCanvasRef = useRef<HTMLDivElement>(null);
 
+  // Log props when the component receives them
+  useEffect(() => {
+    console.log('PDFPreviewModal props received:', {
+      isOpen,
+      pdfUrl,
+      fileName,
+      startPage,
+      endPage,
+      searchText
+    });
+  }, [isOpen, pdfUrl, fileName, startPage, endPage, searchText]);
+
   useEffect(() => {
     // Reset state when modal opens or PDF changes
     if (isOpen) {
-      setCurrentPage(startPage);
+      console.log(`Modal opened, setting current page to ${startPage || 1}`);
+      setCurrentPage(startPage || 1);
       setError(null);
       setLoading(true);
       setHighlightAreas([]);
+      
+      if (!pdfUrl) {
+        setError('No PDF URL provided');
+        setLoading(false);
+      }
     }
   }, [isOpen, startPage, pdfUrl]);
 
   const onDocumentLoadSuccess = (loadInfo: any) => {
+    console.log('PDF document loaded successfully:', loadInfo);
     setNumPages(loadInfo.numPages);
     setPdfDocument(loadInfo._pdfInfo.pdfDocument);
     setLoading(false);
@@ -178,6 +197,7 @@ export default function PDFPreviewModal({
             <div className="relative">
               {pdfUrl && (
                 <div>
+                  {/* @ts-ignore - Ignoring type issues with dynamic imports */}
                   <PDFDocument
                     file={pdfUrl}
                     onLoadSuccess={onDocumentLoadSuccess}
@@ -185,6 +205,7 @@ export default function PDFPreviewModal({
                     loading={<div className="text-gray-500">Loading PDF...</div>}
                   >
                     <div ref={pageCanvasRef} className="relative">
+                      {/* @ts-ignore - Ignoring type issues with dynamic imports */}
                       <PDFPage
                         pageNumber={currentPage}
                         renderTextLayer={true}

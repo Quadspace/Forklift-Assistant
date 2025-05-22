@@ -60,6 +60,21 @@ export const PAGE_REFERENCE_PATTERNS = [
       };
     }
   },
+  // Matches another common citation format like [1] pp. 22-31
+  {
+    regex: /\[(\d+)\]\s+pp?\.?\s*(\d+)(?:\s*-\s*(\d+))?/gi,
+    extractPages: (match: RegExpExecArray) => {
+      const docNumber = match[1];
+      const startPage = match[2];
+      const endPage = match[3] || startPage;
+      return {
+        startPage: parseInt(startPage, 10),
+        endPage: parseInt(endPage, 10),
+        fullMatch: match[0],
+        documentRef: `Reference ${docNumber}`
+      };
+    }
+  },
   // Matches simple citation references like [1] (uses default page 1)
   {
     regex: /\[(\d+)\](?!\s*\()/g,
@@ -109,13 +124,17 @@ export interface PageReference {
 export function detectPageReferences(text: string): PageReference[] {
   const references: PageReference[] = [];
   
+  console.log('Starting detectPageReferences with text:', text.substring(0, 100) + '...');
+  
   // Apply each regex pattern
-  PAGE_REFERENCE_PATTERNS.forEach(pattern => {
+  PAGE_REFERENCE_PATTERNS.forEach((pattern, index) => {
+    console.log(`Trying pattern #${index}:`, pattern.regex);
     const regex = new RegExp(pattern.regex);
     let match: RegExpExecArray | null;
     
     // Find all matches in the text
     while ((match = regex.exec(text)) !== null) {
+      console.log(`Pattern #${index} found match:`, match[0]);
       const extracted = pattern.extractPages(match);
       references.push({
         startPage: extracted.startPage,
@@ -126,6 +145,8 @@ export function detectPageReferences(text: string): PageReference[] {
       });
     }
   });
+  
+  console.log(`Found ${references.length} references in total`);
   
   // Sort references by their position in the text
   return references.sort((a, b) => a.matchIndex - b.matchIndex);
@@ -138,7 +159,10 @@ export function detectPageReferences(text: string): PageReference[] {
  * @returns The matching PDF file or undefined if not found
  */
 export function findMatchingPDFFile(reference: PageReference, files: any[]) {
-  if (!files || files.length === 0) return undefined;
+  if (!files || files.length === 0) {
+    console.log('No files available to match reference:', reference);
+    return undefined;
+  }
   
   // For files array debugging
   console.log('Available PDF files:', files.map(f => f.name));
@@ -146,6 +170,7 @@ export function findMatchingPDFFile(reference: PageReference, files: any[]) {
   // If the reference has a document reference, try to match it with file names
   if (reference.documentRef) {
     const docRef = reference.documentRef.toLowerCase();
+    console.log(`Trying to match document reference: "${docRef}"`);
     
     // For numbered references like [1, pp.22-31], try to match with the first file
     if (docRef.startsWith('reference ')) {
@@ -158,23 +183,42 @@ export function findMatchingPDFFile(reference: PageReference, files: any[]) {
         console.log('Sorted files:', sortedFiles.map(f => f.name));
         
         // Return the file at index refNumber-1 (0-based index for 1-based reference)
-        return sortedFiles[refNumber - 1];
+        const matchedFile = sortedFiles[refNumber - 1];
+        console.log(`Matched file by reference number: ${matchedFile.name}`);
+        return matchedFile;
+      } else {
+        console.log(`Reference number ${refNumber} is invalid or out of range`);
       }
     }
     
     // Standard document reference matching
-    return files.find(file => 
+    const matchedFile = files.find(file => 
       file.name.toLowerCase().includes(docRef) || 
       docRef.includes(file.name.toLowerCase().replace('.pdf', ''))
     );
+    
+    if (matchedFile) {
+      console.log(`Matched file by name similarity: ${matchedFile.name}`);
+      return matchedFile;
+    } else {
+      console.log(`No file matched document reference: "${docRef}"`);
+    }
   }
   
   // If there's only one PDF file, use it
   const pdfFiles = files.filter(file => file.name.toLowerCase().endsWith('.pdf'));
   if (pdfFiles.length === 1) {
+    console.log(`Only one PDF file available, using it: ${pdfFiles[0].name}`);
+    return pdfFiles[0];
+  }
+  
+  // If we have fewer than 5 PDF files, just return the first one as a fallback
+  if (pdfFiles.length > 0 && pdfFiles.length < 5) {
+    console.log(`No specific match found, using first PDF as fallback: ${pdfFiles[0].name}`);
     return pdfFiles[0];
   }
   
   // Otherwise, we don't have enough context to determine which file
+  console.log('No matching file found for reference');
   return undefined;
 } 

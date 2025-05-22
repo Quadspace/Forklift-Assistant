@@ -300,12 +300,43 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
   };
 
   const handleOpenPdfModal = (pdfUrl: string, fileName: string, startPage: number, endPage?: number, searchText?: string) => {
+    console.log('Opening PDF modal with params:', { pdfUrl, fileName, startPage, endPage, searchText });
+    
+    // Ensure we have valid parameters
+    if (!pdfUrl) {
+      console.error('Cannot open PDF modal: Missing PDF URL');
+      return;
+    }
+    
+    if (!fileName) {
+      console.error('Cannot open PDF modal: Missing file name');
+      return;
+    }
+    
+    // Validate start page
+    const validStartPage = Number.isInteger(startPage) && startPage > 0 ? startPage : 1;
+    
+    // Validate end page
+    const validEndPage = endPage && Number.isInteger(endPage) && endPage >= validStartPage 
+      ? endPage 
+      : undefined;
+    
+    // Set state to open modal
     setPdfModalState({
       isOpen: true,
       pdfUrl,
       fileName,
-      startPage,
-      endPage,
+      startPage: validStartPage,
+      endPage: validEndPage,
+      searchText
+    });
+    
+    console.log('PDF modal state set to:', {
+      isOpen: true,
+      pdfUrl,
+      fileName,
+      startPage: validStartPage,
+      endPage: validEndPage,
       searchText
     });
   };
@@ -383,7 +414,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
         processedContent = `${beforeRef}${pdfLink}${afterRef}`;
       }
     }
-
+    
     // Also, scan the content for any brackets that might be citation references but weren't detected
     const bracketCitationRegex = /\[(\d+)\]/g;
     let match;
@@ -393,24 +424,32 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       const docNumber = match[1];
       const matchIndex = match.index;
       
+      console.log(`Found potential bracket citation: ${fullMatch} at index ${matchIndex}`);
+      
       // Only process if it's not already part of a link
       if (!processedContent.substring(Math.max(0, matchIndex - 20), matchIndex).includes('](pdf:')) {
+        console.log(`Citation ${fullMatch} is not part of an existing link`);
         // Try to find a matching file based on the docNumber
         if (files.length >= parseInt(docNumber, 10)) {
           // Get files sorted alphabetically
           const sortedFiles = [...files].sort((a, b) => a.name.localeCompare(b.name));
+          console.log('Sorted files for bracket citation:', sortedFiles.map(f => f.name));
           // Find the file at index docNumber-1 (0-based index for 1-based reference)
           const matchingFile = sortedFiles[parseInt(docNumber, 10) - 1];
           
           if (matchingFile) {
+            console.log(`Found matching file for citation ${fullMatch}:`, matchingFile.name);
             const pdfUrl = `/api/files/${matchingFile.id}/content`;
             const beforeRef = processedContent.substring(0, matchIndex);
             const afterRef = processedContent.substring(matchIndex + fullMatch.length);
             const refText = `PDF ${fullMatch} (${matchingFile.name})`;
             
-            processedContent = `${beforeRef}[${refText}](pdf:${pdfUrl}|${matchingFile.name}|1)${afterRef}`;
+            const pdfLink = `[${refText}](pdf:${pdfUrl}|${matchingFile.name}|1)`;
+            console.log(`Created PDF link for bracket citation: ${pdfLink}`);
+            
+            processedContent = `${beforeRef}${pdfLink}${afterRef}`;
             // Adjust the regex lastIndex to account for the replacement
-            bracketCitationRegex.lastIndex = matchIndex + refText.length + pdfUrl.length + matchingFile.name.length + 10;
+            bracketCitationRegex.lastIndex = matchIndex + pdfLink.length;
           }
         }
       }
@@ -421,6 +460,8 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
         components={{
           a: ({ node, href, ...props }) => {
             if (href?.startsWith('pdf:')) {
+              console.log('Rendering PDF link with href:', href);
+              // Parse the PDF URL and parameters
               const [pdfUrl, fileName, startPage, endPage] = href.substring(4).split('|');
               // Extract text to search for based on what was clicked
               const refText = Array.isArray(props.children) 
@@ -430,13 +471,26 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                   : '';
               
               // Remove the "PDF: " prefix if it exists
-              const searchText = refText.replace(/^PDF:\s*/, '');
+              const searchText = refText.replace(/^PDF:\s*/, '').replace(/^\[.*\]\s*/, '');
+              
+              console.log('PDF link parameters:', {
+                pdfUrl,
+                fileName,
+                startPage: parseInt(startPage, 10),
+                endPage: endPage ? parseInt(endPage, 10) : undefined,
+                searchText
+              });
               
               return (
                 <a 
                   href="#"
                   onClick={(e) => {
                     e.preventDefault();
+                    console.log('PDF link clicked, opening modal with:', {
+                      pdfUrl,
+                      fileName,
+                      startPage: parseInt(startPage, 10)
+                    });
                     handleOpenPdfModal(
                       pdfUrl, 
                       fileName, 
