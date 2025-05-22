@@ -29,6 +29,21 @@ export const PAGE_REFERENCE_PATTERNS = [
         documentRef: match[1]
       };
     }
+  },
+  // Matches citation references like [1, pp.22-31]
+  {
+    regex: /\[(\d+),\s*pp?\.?\s*(\d+)(?:\s*-\s*(\d+))?\]/gi,
+    extractPages: (match: RegExpExecArray) => {
+      const docNumber = match[1];
+      const startPage = match[2];
+      const endPage = match[3] || startPage;
+      return {
+        startPage: parseInt(startPage, 10),
+        endPage: parseInt(endPage, 10),
+        fullMatch: match[0],
+        documentRef: `Reference ${docNumber}`
+      };
+    }
   }
 ];
 
@@ -85,6 +100,19 @@ export function findMatchingPDFFile(reference: PageReference, files: any[]) {
   // If the reference has a document reference, try to match it with file names
   if (reference.documentRef) {
     const docRef = reference.documentRef.toLowerCase();
+    
+    // For numbered references like [1, pp.22-31], try to match with the first file
+    if (docRef.startsWith('reference ')) {
+      const refNumber = parseInt(docRef.replace('reference ', ''), 10);
+      if (!isNaN(refNumber) && refNumber > 0 && files.length >= refNumber) {
+        // Get files sorted alphabetically
+        const sortedFiles = [...files].sort((a, b) => a.name.localeCompare(b.name));
+        // Return the file at index refNumber-1 (0-based index for 1-based reference)
+        return sortedFiles[refNumber - 1];
+      }
+    }
+    
+    // Standard document reference matching
     return files.find(file => 
       file.name.toLowerCase().includes(docRef) || 
       docRef.includes(file.name.toLowerCase().replace('.pdf', ''))

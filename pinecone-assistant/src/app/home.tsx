@@ -366,7 +366,14 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
         const afterRef = processedContent.substring(ref.matchIndex + ref.fullMatch.length);
         const pdfUrl = `/api/files/${matchingFile.id}/content`;
         
-        processedContent = `${beforeRef}[PDF: ${ref.fullMatch}](pdf:${pdfUrl}|${matchingFile.name}|${ref.startPage}|${ref.endPage || ref.startPage})${afterRef}`;
+        // Enhanced reference display with citation information
+        let refText = ref.fullMatch;
+        // For citation references, add a more descriptive text
+        if (ref.fullMatch.match(/\[\d+,.*\]/)) {
+          refText = `PDF ${ref.fullMatch} (${matchingFile.name})`;
+        }
+        
+        processedContent = `${beforeRef}[${refText}](pdf:${pdfUrl}|${matchingFile.name}|${ref.startPage}|${ref.endPage || ref.startPage})${afterRef}`;
       }
     }
 
@@ -399,7 +406,8 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                       searchText
                     );
                   }}
-                  className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline inline-flex items-center"
+                  title={`View pages ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''} in ${fileName}`}
+                  className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline inline-flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-1 py-0.5 rounded"
                 >
                   <svg
                     className="w-4 h-4 mr-1"
