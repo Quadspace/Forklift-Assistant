@@ -9,13 +9,18 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@prisma/client": "^6.8.2",
     "@types/uuid": "^10.0.0",
     "ai": "^3.2.43",
+    "bcryptjs": "^3.0.2",
     "extended-eventsource": "^1.4.9",
     "next": "14.2.26",
+    "pdfjs-dist": "^5.2.133",
+    "prisma": "^6.8.2",
     "react": "^18",
     "react-dom": "^18",
     "react-markdown": "^9.0.1",
+    "react-pdf": "^9.2.1",
     "uuid": "^10.0.0"
   },
   "devDependencies": {
