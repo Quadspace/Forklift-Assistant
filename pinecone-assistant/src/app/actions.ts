@@ -31,6 +31,9 @@ export async function chat(messages: Message[]) {
     disableRetry: true,
   });
 
+  // Add a flag to track if stream is already done
+  let streamClosed = false;
+
   // When we recieve a new message from the Pinecone Assistant API, we update the stream
   // Unless the Assistant is done, in which case we close the stream
   eventSource.onmessage = (event: MessageEvent) => {
@@ -41,11 +44,14 @@ export async function chat(messages: Message[]) {
       if (message && Array.isArray(message.choices) && message.choices.length === 0) {
         console.log('Stream finished: Received empty choices array.');
         eventSource.close();
-        stream.done();
+        // Don't call stream.done() here as it may be already closed by a finish_reason event
       } else if (message?.choices[0]?.finish_reason) {
         console.log('Stream finished by assistant with finish_reason:', message.choices[0].finish_reason);
         eventSource.close();
-        stream.done();
+        if (!streamClosed) {
+          stream.done();
+          streamClosed = true;
+        }
       } else if (message?.choices[0]?.delta?.content) {
         stream.update(event.data);
       } else {
@@ -55,8 +61,7 @@ export async function chat(messages: Message[]) {
     } catch (e) {
       console.error('Error parsing event.data:', e);
       console.error('Problematic event.data content was:', event.data);
-      // Consider if this parse error should also trigger stream.error()
-      // For now, allow it to potentially fall through to the main onerror if EventSource itself errors
+      // Don't close stream on parse errors, just log them
     }
   };
 
@@ -82,7 +87,16 @@ export async function chat(messages: Message[]) {
     } catch (e) {
       console.warn('Error closing EventSource (might be already closed):', e);
     }
-    stream.error({ message: 'A connection error occurred with the assistant service.' });
+
+    // Only report error if stream hasn't been closed already
+    if (!streamClosed) {
+      try {
+        stream.error({ message: 'A connection error occurred with the assistant service.' });
+        streamClosed = true;
+      } catch (e) {
+        console.warn('Error closing stream (might be already closed):', e);
+      }
+    }
   };
 
   return { object: stream.value }
