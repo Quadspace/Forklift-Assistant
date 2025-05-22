@@ -27,12 +27,30 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
   const [isStreaming, setIsStreaming] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [darkMode, setDarkMode] = useState(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Modify the scroll function to target the chat container
+  // Debounced scroll function to prevent too many scroll operations
   const scrollToBottom = useCallback(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    // Clear any existing timeout
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
     }
+    
+    // Set a new timeout to scroll after a short delay
+    scrollTimeoutRef.current = setTimeout(() => {
+      if (chatContainerRef.current) {
+        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      }
+    }, 100); // 100ms delay to batch scroll operations
+  }, []);
+
+  // Clean up timeout on component unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -141,6 +159,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       scrollToBottom(); // Scroll to bottom when assistant starts responding
 
       // Process the response stream from the Assistant that is created in the ./actions.ts Server action
+      let scrollCounter = 0;
       for await (const chunk of readStreamableValue(object)) {
         try {
           const data = JSON.parse(chunk);
@@ -157,8 +176,11 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
             return updatedMessages;
           });
           
-          // Scroll to bottom as content is being streamed
-          scrollToBottom();
+          // Only scroll occasionally during streaming to reduce performance impact
+          scrollCounter++;
+          if (scrollCounter % 10 === 0) { // Only scroll every 10 chunks
+            scrollToBottom();
+          }
 
         } catch (error) {
           console.error('Error parsing chunk:', error);
