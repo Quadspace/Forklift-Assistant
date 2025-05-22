@@ -154,6 +154,9 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     setMessages(prevMessages => [...prevMessages, newUserMessage]);
     setInput('');
     setIsStreaming(true);
+    
+    // Prevent window from scrolling while streaming
+    document.body.style.overflow = 'hidden';
 
     try {
       const { object } = await chat([newUserMessage]);
@@ -207,11 +210,13 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       setError('An error occurred while chatting.');
     } finally {
       setIsStreaming(false);
+      // Restore normal scrolling when done
+      document.body.style.overflow = '';
     }
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 bg-gray-50 dark:bg-gray-900" style={{ overflowX: 'hidden' }}>
+    <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 bg-gray-50 dark:bg-gray-900" style={{ overflow: 'hidden', position: 'fixed', width: '100%', height: '100%', top: 0, left: 0 }}>
       <button
         onClick={toggleDarkMode}
         className="absolute top-4 right-4 p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
