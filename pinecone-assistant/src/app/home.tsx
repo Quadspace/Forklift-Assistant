@@ -27,6 +27,16 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
   const [files, setFiles] = useState<File[]>([]);
   const [darkMode, setDarkMode] = useState(false);
 
+  // Add a function to scroll to the bottom of the chat
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
+  useEffect(() => {
+    // Scroll to bottom when messages change
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
+
   useEffect(() => {
     // Check for dark mode preference
     if (typeof window !== 'undefined') {
@@ -125,6 +135,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       };
       
       setMessages(prevMessages => [...prevMessages, newAssistantMessage]);
+      scrollToBottom(); // Scroll to bottom when assistant starts responding
 
       // Process the response stream from the Assistant that is created in the ./actions.ts Server action
       for await (const chunk of readStreamableValue(object)) {
@@ -142,6 +153,9 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
             lastMessage.content = accumulatedContent;
             return updatedMessages;
           });
+          
+          // Scroll to bottom as content is being streamed
+          scrollToBottom();
 
         } catch (error) {
           console.error('Error parsing chunk:', error);
@@ -187,7 +201,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           <h1 className="text-2xl font-bold mb-4 text-indigo-900 dark:text-indigo-100"><a href="https://www.industrialengineer.ai/blog/industrialengineer-ai-assistant/" target="_blank" rel="noopener noreferrer" className="hover:underline">Industrial Engineer.ai Assistant</a>: {assistantName} <span className="text-green-500">●</span></h1>
           <div className="flex flex-col gap-4">
             <div className="w-full">
-              <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg mb-4 h-[calc(100vh-500px)] overflow-y-auto">
+              <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg mb-4 h-[calc(100vh-300px)] overflow-y-auto">
                 {messages.map((message, index) => (
                   <div key={index} className={`mb-2 flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`flex items-start ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
