@@ -29,7 +29,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
   const [darkMode, setDarkMode] = useState(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Debounced scroll function to prevent too many scroll operations
+  // Improved scroll function that only affects the chat container
   const scrollToBottom = useCallback(() => {
     // Clear any existing timeout
     if (scrollTimeoutRef.current) {
@@ -39,10 +39,21 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     // Set a new timeout to scroll after a short delay
     scrollTimeoutRef.current = setTimeout(() => {
       if (chatContainerRef.current) {
-        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+        // Get the current scroll position
+        const scrollPosition = chatContainerRef.current.scrollTop;
+        const scrollHeight = chatContainerRef.current.scrollHeight;
+        const clientHeight = chatContainerRef.current.clientHeight;
+        
+        // Only auto-scroll if user is already near the bottom
+        // or if this is a new message sequence
+        const isNearBottom = scrollHeight - scrollPosition - clientHeight < 100;
+        
+        if (isNearBottom || messages.length <= 2) {
+          chatContainerRef.current.scrollTop = scrollHeight;
+        }
       }
     }, 100); // 100ms delay to batch scroll operations
-  }, []);
+  }, [messages.length]);
 
   // Clean up timeout on component unmount
   useEffect(() => {
@@ -200,7 +211,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 bg-gray-50 dark:bg-gray-900">
+    <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 bg-gray-50 dark:bg-gray-900" style={{ overflowX: 'hidden' }}>
       <button
         onClick={toggleDarkMode}
         className="absolute top-4 right-4 p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
@@ -226,7 +237,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           <h1 className="text-2xl font-bold mb-4 text-indigo-900 dark:text-indigo-100"><a href="https://www.industrialengineer.ai/blog/industrialengineer-ai-assistant/" target="_blank" rel="noopener noreferrer" className="hover:underline">Industrial Engineer.ai Assistant</a>: {assistantName} <span className="text-green-500">●</span></h1>
           <div className="flex flex-col gap-4">
             <div className="w-full">
-              <div ref={chatContainerRef} className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg mb-4 h-[calc(100vh-300px)] overflow-y-auto">
+              <div ref={chatContainerRef} className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg mb-4 h-[calc(100vh-300px)] overflow-y-auto overflow-x-hidden">
                 {messages.map((message, index) => (
                   <div key={index} className={`mb-2 flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`flex items-start ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
