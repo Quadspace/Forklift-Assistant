@@ -405,7 +405,11 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
         let refText = ref.fullMatch;
         // For citation references, add a more descriptive text
         if (ref.fullMatch.match(/\[\d+,.*\]/)) {
-          refText = `PDF ${ref.fullMatch} (${matchingFile.name})`;
+          refText = `PDF: ${matchingFile.name} (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
+        } else if (ref.fullMatch.match(/\[\d+\]/)) {
+          refText = `PDF: ${matchingFile.name}`;
+        } else {
+          refText = `PDF: ${matchingFile.name} (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
         }
         
         const pdfLink = `[${refText}](pdf:${pdfUrl}|${matchingFile.name}|${ref.startPage}|${ref.endPage || ref.startPage})`;
@@ -442,7 +446,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
             const pdfUrl = `/api/files/${matchingFile.id}/content`;
             const beforeRef = processedContent.substring(0, matchIndex);
             const afterRef = processedContent.substring(matchIndex + fullMatch.length);
-            const refText = `PDF ${fullMatch} (${matchingFile.name})`;
+            const refText = `PDF: ${matchingFile.name}`;
             
             const pdfLink = `[${refText}](pdf:${pdfUrl}|${matchingFile.name}|1)`;
             console.log(`Created PDF link for bracket citation: ${pdfLink}`);
@@ -470,8 +474,12 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                   ? props.children 
                   : '';
               
-              // Remove the "PDF: " prefix if it exists
-              const searchText = refText.replace(/^PDF:\s*/, '').replace(/^\[.*\]\s*/, '');
+              // Get just the PDF name for searching - remove any prefixes and page references
+              const searchText = refText
+                .replace(/^PDF:\s*/, '')
+                .replace(/\s*\(p\.\s*\d+(?:-\d+)?\)$/, '')
+                .replace(/^\[.*\]\s*/, '')
+                .trim();
               
               console.log('PDF link parameters:', {
                 pdfUrl,
@@ -499,18 +507,18 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                       searchText
                     );
                   }}
-                  title={`View pages ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''} in ${fileName}`}
-                  className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline inline-flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-1 py-0.5 rounded"
+                  title={`View ${fileName}${startPage ? ` (page ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})` : ''}`}
+                  className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline inline-flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-700 shadow-sm"
                 >
                   <svg
-                    className="w-4 h-4 mr-1"
+                    className="w-4 h-4 mr-1 flex-shrink-0"
                     fill="currentColor"
                     viewBox="0 0 20 20"
                     xmlns="http://www.w3.org/2000/svg"
                   >
                     <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
                   </svg>
-                  {props.children}
+                  <span className="truncate max-w-[200px]">{props.children}</span>
                 </a>
               );
             }
