@@ -205,25 +205,31 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       
       setMessages(prevMessages => [...prevMessages, newAssistantMessage]);
 
-      // Process the response stream
+      // Reintroduce proper stream handling to prevent getting stuck
       for await (const chunk of readStreamableValue(object)) {
         try {
           const data = JSON.parse(chunk);
+          // Check for empty choices array first as it might signify stream completion
+          if (data && Array.isArray(data.choices) && data.choices.length === 0) {
+            console.log('Stream finished: Received empty choices array.');
+            break; // Exit the loop when done
+          } else if (data?.choices[0]?.finish_reason) {
+            console.log('Stream finished by assistant with finish_reason:', data.choices[0].finish_reason);
+            break; // Exit the loop when done
+          }
+          
           const content = data.choices[0]?.delta?.content;
           
           if (content) {
             accumulatedContent += content;
+            
+            setMessages(prevMessages => {
+              const updatedMessages = [...prevMessages];
+              const lastMessage = updatedMessages[updatedMessages.length - 1];
+              lastMessage.content = accumulatedContent;
+              return updatedMessages;
+            });
           }
-          
-          setMessages(prevMessages => {
-            const updatedMessages = [...prevMessages];
-            const lastMessage = updatedMessages[updatedMessages.length - 1];
-            lastMessage.content = accumulatedContent;
-            return updatedMessages;
-          });
-          
-          // No scrolling here - rely on the useEffect
-
         } catch (error) {
           console.error('Error parsing chunk:', error);
         }
@@ -366,7 +372,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     );
   };
 
-  // Simple direct scroll function
+  // Keep the simple direct scroll function
   useEffect(() => {
     // Simple, direct scroll to bottom of messages container
     if (messages.length > 0) {
