@@ -182,7 +182,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     if (!input.trim()) return;
 
     const newUserMessage: Message = {
-      id: uuidv4(), // Generate a unique ID
+      id: uuidv4(), 
       role: 'user',
       content: input,
       timestamp: new Date().toISOString() 
@@ -204,10 +204,8 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       };
       
       setMessages(prevMessages => [...prevMessages, newAssistantMessage]);
-      scrollToBottom(); // Scroll to bottom when assistant starts responding
 
-      // Process the response stream from the Assistant that is created in the ./actions.ts Server action
-      let scrollCounter = 0;
+      // Process the response stream
       for await (const chunk of readStreamableValue(object)) {
         try {
           const data = JSON.parse(chunk);
@@ -224,11 +222,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
             return updatedMessages;
           });
           
-          // Only scroll occasionally during streaming to reduce performance impact
-          scrollCounter++;
-          if (scrollCounter % 10 === 0) { // Only scroll every 10 chunks
-            scrollToBottom();
-          }
+          // No scrolling here - rely on the useEffect
 
         } catch (error) {
           console.error('Error parsing chunk:', error);
@@ -372,6 +366,19 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     );
   };
 
+  // Simple direct scroll function
+  useEffect(() => {
+    // Simple, direct scroll to bottom of messages container
+    if (messages.length > 0) {
+      const container = document.getElementById('messages-container');
+      if (container) {
+        setTimeout(() => {
+          container.scrollTop = container.scrollHeight;
+        }, 50);
+      }
+    }
+  }, [messages]);
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 bg-gray-50 dark:bg-gray-900">
       <button
@@ -399,7 +406,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           <h1 className="text-2xl font-bold mb-4 text-indigo-900 dark:text-indigo-100"><a href="https://www.industrialengineer.ai/blog/industrialengineer-ai-assistant/" target="_blank" rel="noopener noreferrer" className="hover:underline">Industrial Engineer.ai Assistant</a>: {assistantName} <span className="text-green-500">●</span></h1>
           <div className="flex flex-col gap-4">
             <div className="w-full">
-              <div id="chat-container" className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg mb-4 h-[calc(100vh-300px)] overflow-y-auto overflow-x-hidden">
+              <div id="messages-container" className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg mb-4 h-[calc(100vh-300px)] overflow-y-auto overflow-x-hidden">
                 {messages.map((message, index) => (
                   <div key={index} className={`mb-2 flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`flex items-start ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -437,7 +444,6 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                     </div>
                   </div>
                 ))}
-                <div ref={messagesEndRef} />
               </div>
               <form onSubmit={(e) => { e.preventDefault(); handleChat(); }} className="flex mb-4">
                 <input
