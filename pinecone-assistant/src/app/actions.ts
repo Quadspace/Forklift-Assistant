@@ -18,6 +18,43 @@ export async function chat(messages: Message[]) {
   const url = `${process.env.PINECONE_ASSISTANT_URL}/assistant/chat/${process.env.PINECONE_ASSISTANT_NAME}/chat/completions`
   console.log('Connecting to Pinecone Assistants API at URL:', url);
 
+  // Add a flag to track if stream is already done
+  let streamClosed = false;
+  
+  // Force stream to close after a maximum timeout period
+  const forceCloseTimeout = setTimeout(() => {
+    console.log('Force closing stream after maximum timeout');
+    if (!streamClosed) {
+      try {
+        stream.done();
+        streamClosed = true;
+      } catch (e) {
+        console.warn('Error force closing stream:', e);
+      }
+    }
+  }, 45000); // 45 seconds maximum
+  
+  // Set activity timeout - if no message for 20 seconds, close the stream
+  let activityTimeout: NodeJS.Timeout | null = null;
+  
+  const resetActivityTimeout = () => {
+    if (activityTimeout) clearTimeout(activityTimeout);
+    
+    activityTimeout = setTimeout(() => {
+      console.log('No activity for 20 seconds, closing stream');
+      if (!streamClosed) {
+        try {
+          stream.done();
+          streamClosed = true;
+        } catch (e) {
+          console.warn('Error closing stream on activity timeout:', e);
+        }
+      }
+    }, 20000); // 20 seconds without activity
+  };
+  
+  resetActivityTimeout();
+
   const eventSource = new EventSource(url, {
     method: 'POST',
     body: JSON.stringify({
@@ -31,32 +68,55 @@ export async function chat(messages: Message[]) {
     disableRetry: true,
   });
 
-  // Add a flag to track if stream is already done
-  let streamClosed = false;
-
   // When we recieve a new message from the Pinecone Assistant API, we update the stream
   // Unless the Assistant is done, in which case we close the stream
   eventSource.onmessage = (event: MessageEvent) => {
     console.log('Raw event.data:', event.data); // Log all incoming data
+    
+    // Reset activity timeout on each message
+    resetActivityTimeout();
+    
     try {
       const message = JSON.parse(event.data);
       // Check for empty choices array first, as it might signify a specific end condition
       if (message && Array.isArray(message.choices) && message.choices.length === 0) {
         console.log('Stream finished: Received empty choices array.');
         eventSource.close();
-        // Don't call stream.done() here as it may be already closed by a finish_reason event
+        if (!streamClosed) {
+          stream.done();
+          streamClosed = true;
+          // Clear timeouts
+          clearTimeout(forceCloseTimeout);
+          if (activityTimeout) clearTimeout(activityTimeout);
+        }
       } else if (message?.choices[0]?.finish_reason) {
         console.log('Stream finished by assistant with finish_reason:', message.choices[0].finish_reason);
         eventSource.close();
         if (!streamClosed) {
           stream.done();
           streamClosed = true;
+          // Clear timeouts
+          clearTimeout(forceCloseTimeout);
+          if (activityTimeout) clearTimeout(activityTimeout);
         }
       } else if (message?.choices[0]?.delta?.content) {
         stream.update(event.data);
       } else {
         // Potentially empty but valid JSON, or unexpected structure not yet handled
         console.warn('Received message with no content, finish_reason, or empty choices:', message);
+        // If we're receiving empty messages repeatedly, this could be a sign of completion
+        // Add a fallback completion check
+        if (message && typeof message === 'object' && Object.keys(message).length === 0) {
+          console.log('Stream possibly finished: Received empty object');
+          eventSource.close();
+          if (!streamClosed) {
+            stream.done();
+            streamClosed = true;
+            // Clear timeouts
+            clearTimeout(forceCloseTimeout);
+            if (activityTimeout) clearTimeout(activityTimeout);
+          }
+        }
       }
     } catch (e) {
       console.error('Error parsing event.data:', e);
@@ -93,6 +153,9 @@ export async function chat(messages: Message[]) {
       try {
         stream.error({ message: 'A connection error occurred with the assistant service.' });
         streamClosed = true;
+        // Clear timeouts
+        clearTimeout(forceCloseTimeout);
+        if (activityTimeout) clearTimeout(activityTimeout);
       } catch (e) {
         console.warn('Error closing stream (might be already closed):', e);
       }

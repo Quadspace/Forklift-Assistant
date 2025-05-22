@@ -181,6 +181,12 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
   const handleChat = async () => {
     if (!input.trim()) return;
 
+    // Set a global timeout to force reset streaming state after 60 seconds maximum
+    const globalTimeout = setTimeout(() => {
+      console.log('Global timeout reached - forcing streaming state reset');
+      setIsStreaming(false);
+    }, 60000); // 60 seconds absolute maximum
+
     const newUserMessage: Message = {
       id: uuidv4(), 
       role: 'user',
@@ -205,34 +211,81 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       
       setMessages(prevMessages => [...prevMessages, newAssistantMessage]);
 
-      // Reintroduce proper stream handling to prevent getting stuck
-      for await (const chunk of readStreamableValue(object)) {
-        try {
-          const data = JSON.parse(chunk);
-          // Check for empty choices array first as it might signify stream completion
-          if (data && Array.isArray(data.choices) && data.choices.length === 0) {
-            console.log('Stream finished: Received empty choices array.');
-            break; // Exit the loop when done
-          } else if (data?.choices[0]?.finish_reason) {
-            console.log('Stream finished by assistant with finish_reason:', data.choices[0].finish_reason);
-            break; // Exit the loop when done
-          }
-          
-          const content = data.choices[0]?.delta?.content;
-          
-          if (content) {
-            accumulatedContent += content;
-            
-            setMessages(prevMessages => {
-              const updatedMessages = [...prevMessages];
-              const lastMessage = updatedMessages[updatedMessages.length - 1];
-              lastMessage.content = accumulatedContent;
-              return updatedMessages;
-            });
-          }
-        } catch (error) {
-          console.error('Error parsing chunk:', error);
+      // Improved stream handling with multiple timeouts
+      let streamTimeout: NodeJS.Timeout | null = null;
+      let activityTimeout: NodeJS.Timeout | null = null;
+      let chunkCount = 0;
+      
+      // Shorter idle time - 15 seconds
+      const MAX_IDLE_TIME = 15000;
+      
+      // Set a safety timeout to prevent getting stuck
+      const setStreamSafetyTimeout = () => {
+        if (streamTimeout) clearTimeout(streamTimeout);
+        streamTimeout = setTimeout(() => {
+          console.log('Stream timed out - no chunks received for 15 seconds');
+          setIsStreaming(false);
+        }, MAX_IDLE_TIME);
+      };
+
+      // Set an activity timeout - if we get a few chunks but then it stops, consider done
+      const setActivityTimeout = () => {
+        if (activityTimeout) clearTimeout(activityTimeout);
+        if (chunkCount > 0) {
+          activityTimeout = setTimeout(() => {
+            console.log('Activity stopped after receiving chunks - considering stream complete');
+            setIsStreaming(false);
+          }, 8000); // 8 seconds after activity stops
         }
+      };
+
+      setStreamSafetyTimeout();
+
+      // Process the stream with improved error handling
+      try {
+        for await (const chunk of readStreamableValue(object)) {
+          try {
+            // Reset timeouts on each chunk
+            setStreamSafetyTimeout();
+            setActivityTimeout();
+            chunkCount++;
+
+            const data = JSON.parse(chunk);
+            // Check for empty choices array first as it might signify stream completion
+            if (data && Array.isArray(data.choices) && data.choices.length === 0) {
+              console.log('Stream finished: Received empty choices array.');
+              setIsStreaming(false);
+              break; // Exit the loop when done
+            } else if (data?.choices[0]?.finish_reason) {
+              console.log('Stream finished by assistant with finish_reason:', data.choices[0].finish_reason);
+              setIsStreaming(false);
+              break; // Exit the loop when done
+            }
+            
+            const content = data.choices[0]?.delta?.content;
+            
+            if (content) {
+              accumulatedContent += content;
+              
+              setMessages(prevMessages => {
+                const updatedMessages = [...prevMessages];
+                const lastMessage = updatedMessages[updatedMessages.length - 1];
+                lastMessage.content = accumulatedContent;
+                return updatedMessages;
+              });
+            }
+          } catch (error) {
+            console.error('Error parsing chunk:', error);
+          }
+        }
+      } catch (streamError) {
+        console.error('Stream processing error:', streamError);
+        setIsStreaming(false);
+      } finally {
+        // Clear all timeouts
+        if (streamTimeout) clearTimeout(streamTimeout);
+        if (activityTimeout) clearTimeout(activityTimeout);
+        setIsStreaming(false);
       }
 
       // Extract references after the full message is received
@@ -243,6 +296,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       console.error('Error in chat:', error);
       setError('An error occurred while chatting.');
     } finally {
+      clearTimeout(globalTimeout);
       setIsStreaming(false);
     }
   };
