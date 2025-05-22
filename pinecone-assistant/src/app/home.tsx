@@ -77,6 +77,22 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       if (isDarkMode) {
         document.documentElement.classList.add('dark');
       }
+      
+      // Prevent browser scrolling entirely
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.width = '100%';
+      document.body.style.height = '100%';
+      
+      // Cleanup function
+      return () => {
+        document.documentElement.style.overflow = '';
+        document.body.style.overflow = '';
+        document.body.style.position = '';
+        document.body.style.width = '';
+        document.body.style.height = '';
+      };
     }
   }, []);
 
@@ -155,9 +171,6 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     setInput('');
     setIsStreaming(true);
     
-    // Prevent window from scrolling while streaming
-    document.body.style.overflow = 'hidden';
-
     try {
       const { object } = await chat([newUserMessage]);
       let accumulatedContent = '';
@@ -210,13 +223,11 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       setError('An error occurred while chatting.');
     } finally {
       setIsStreaming(false);
-      // Restore normal scrolling when done
-      document.body.style.overflow = '';
     }
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 bg-gray-50 dark:bg-gray-900" style={{ overflow: 'hidden', position: 'fixed', width: '100%', height: '100%', top: 0, left: 0 }}>
+    <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 bg-gray-50 dark:bg-gray-900" style={{ height: '100vh', overflow: 'hidden' }}>
       <button
         onClick={toggleDarkMode}
         className="absolute top-4 right-4 p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
