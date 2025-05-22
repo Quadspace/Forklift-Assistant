@@ -89,8 +89,11 @@ export default function PDFPreviewModal({
         const pageTextContent = textContent.items.map((item: any) => item.str).join(' ');
         setPageText(pageTextContent);
 
+        console.log(`Searching for text "${searchText}" in current page text:`, pageTextContent.substring(0, 200) + '...');
+        
         // Find highlight positions
         if (searchText && pageTextContent.includes(searchText)) {
+          console.log(`Found search text "${searchText}" in page ${currentPage}`);
           const viewport = page.getViewport({ scale: 1.0 });
           const highlights: any[] = [];
 
@@ -110,10 +113,15 @@ export default function PDFPreviewModal({
                 rect: rect,
                 viewport: viewport
               });
+              
+              console.log(`Added highlight for "${item.str}" at position:`, rect);
             }
           }
 
           setHighlightAreas(highlights);
+          console.log(`Created ${highlights.length} highlight areas`);
+        } else {
+          console.log(`Search text "${searchText}" not found in page ${currentPage}`);
         }
       } catch (error) {
         console.error('Error extracting text:', error);

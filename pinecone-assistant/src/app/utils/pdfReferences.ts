@@ -30,9 +30,24 @@ export const PAGE_REFERENCE_PATTERNS = [
       };
     }
   },
-  // Matches citation references like [1, pp.22-31]
+  // Matches citation references like [1, pp.22-31] with flexible spacing
   {
     regex: /\[(\d+),\s*pp?\.?\s*(\d+)(?:\s*-\s*(\d+))?\]/gi,
+    extractPages: (match: RegExpExecArray) => {
+      const docNumber = match[1];
+      const startPage = match[2];
+      const endPage = match[3] || startPage;
+      return {
+        startPage: parseInt(startPage, 10),
+        endPage: parseInt(endPage, 10),
+        fullMatch: match[0],
+        documentRef: `Reference ${docNumber}`
+      };
+    }
+  },
+  // Exact match for the format like "[1, pp. 22-31]" with space after comma and period
+  {
+    regex: /\[(\d+),\s+pp\.\s+(\d+)(?:\s*-\s*(\d+))?\]/gi,
     extractPages: (match: RegExpExecArray) => {
       const docNumber = match[1];
       const startPage = match[2];
@@ -125,6 +140,9 @@ export function detectPageReferences(text: string): PageReference[] {
 export function findMatchingPDFFile(reference: PageReference, files: any[]) {
   if (!files || files.length === 0) return undefined;
   
+  // For files array debugging
+  console.log('Available PDF files:', files.map(f => f.name));
+  
   // If the reference has a document reference, try to match it with file names
   if (reference.documentRef) {
     const docRef = reference.documentRef.toLowerCase();
@@ -132,9 +150,13 @@ export function findMatchingPDFFile(reference: PageReference, files: any[]) {
     // For numbered references like [1, pp.22-31], try to match with the first file
     if (docRef.startsWith('reference ')) {
       const refNumber = parseInt(docRef.replace('reference ', ''), 10);
+      console.log(`Trying to match reference ${refNumber} with available files`);
+      
       if (!isNaN(refNumber) && refNumber > 0 && files.length >= refNumber) {
         // Get files sorted alphabetically
         const sortedFiles = [...files].sort((a, b) => a.name.localeCompare(b.name));
+        console.log('Sorted files:', sortedFiles.map(f => f.name));
+        
         // Return the file at index refNumber-1 (0-based index for 1-based reference)
         return sortedFiles[refNumber - 1];
       }

@@ -335,8 +335,9 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     // For assistant messages, look for PDF references
     const references = detectPageReferences(content);
     
-    // Debug log to see if references are being detected
+    // Enhanced debug logging
     console.log('Detected PDF references:', references, 'in content:', content);
+    console.log('Available files for matching:', files.map(f => ({ id: f.id, name: f.name })));
     
     if (references.length === 0) {
       // If no references, render normally
@@ -362,6 +363,8 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       const ref = references[i];
       const matchingFile = findMatchingPDFFile(ref, files);
       
+      console.log(`Processing reference: ${ref.fullMatch}, matching file:`, matchingFile);
+      
       if (matchingFile) {
         const beforeRef = processedContent.substring(0, ref.matchIndex);
         const afterRef = processedContent.substring(ref.matchIndex + ref.fullMatch.length);
@@ -374,7 +377,10 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           refText = `PDF ${ref.fullMatch} (${matchingFile.name})`;
         }
         
-        processedContent = `${beforeRef}[${refText}](pdf:${pdfUrl}|${matchingFile.name}|${ref.startPage}|${ref.endPage || ref.startPage})${afterRef}`;
+        const pdfLink = `[${refText}](pdf:${pdfUrl}|${matchingFile.name}|${ref.startPage}|${ref.endPage || ref.startPage})`;
+        console.log(`Created PDF link: ${pdfLink}`);
+        
+        processedContent = `${beforeRef}${pdfLink}${afterRef}`;
       }
     }
 
