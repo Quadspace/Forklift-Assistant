@@ -9,9 +9,7 @@ import { File, Reference, Message } from './types';
 import { v4 as uuidv4 } from 'uuid';
 import { detectPageReferences, findMatchingPDFFile } from './utils/pdfReferences';
 import dynamic from 'next/dynamic';
-
-// Dynamically import the PDF modal component
-const PDFPreviewModal = dynamic(() => import('./components/PDFPreviewModal'), { ssr: false });
+import PDFPreviewModal from './components/PDFPreviewModal';
 
 interface HomeProps {
   initialShowAssistantFiles: boolean;
@@ -337,6 +335,9 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     // For assistant messages, look for PDF references
     const references = detectPageReferences(content);
     
+    // Debug log to see if references are being detected
+    console.log('Detected PDF references:', references, 'in content:', content);
+    
     if (references.length === 0) {
       // If no references, render normally
       return (
@@ -374,6 +375,38 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
         }
         
         processedContent = `${beforeRef}[${refText}](pdf:${pdfUrl}|${matchingFile.name}|${ref.startPage}|${ref.endPage || ref.startPage})${afterRef}`;
+      }
+    }
+
+    // Also, scan the content for any brackets that might be citation references but weren't detected
+    const bracketCitationRegex = /\[(\d+)\]/g;
+    let match;
+    while ((match = bracketCitationRegex.exec(processedContent)) !== null) {
+      // This might be a citation reference that wasn't detected by our patterns
+      const fullMatch = match[0];
+      const docNumber = match[1];
+      const matchIndex = match.index;
+      
+      // Only process if it's not already part of a link
+      if (!processedContent.substring(Math.max(0, matchIndex - 20), matchIndex).includes('](pdf:')) {
+        // Try to find a matching file based on the docNumber
+        if (files.length >= parseInt(docNumber, 10)) {
+          // Get files sorted alphabetically
+          const sortedFiles = [...files].sort((a, b) => a.name.localeCompare(b.name));
+          // Find the file at index docNumber-1 (0-based index for 1-based reference)
+          const matchingFile = sortedFiles[parseInt(docNumber, 10) - 1];
+          
+          if (matchingFile) {
+            const pdfUrl = `/api/files/${matchingFile.id}/content`;
+            const beforeRef = processedContent.substring(0, matchIndex);
+            const afterRef = processedContent.substring(matchIndex + fullMatch.length);
+            const refText = `PDF ${fullMatch} (${matchingFile.name})`;
+            
+            processedContent = `${beforeRef}[${refText}](pdf:${pdfUrl}|${matchingFile.name}|1)${afterRef}`;
+            // Adjust the regex lastIndex to account for the replacement
+            bracketCitationRegex.lastIndex = matchIndex + refText.length + pdfUrl.length + matchingFile.name.length + 10;
+          }
+        }
       }
     }
 

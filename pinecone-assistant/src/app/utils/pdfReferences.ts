@@ -44,6 +44,34 @@ export const PAGE_REFERENCE_PATTERNS = [
         documentRef: `Reference ${docNumber}`
       };
     }
+  },
+  // Matches simple citation references like [1] (uses default page 1)
+  {
+    regex: /\[(\d+)\](?!\s*\()/g,
+    extractPages: (match: RegExpExecArray) => {
+      const docNumber = match[1];
+      return {
+        startPage: 1,
+        endPage: 1,
+        fullMatch: match[0],
+        documentRef: `Reference ${docNumber}`
+      };
+    }
+  },
+  // Matches citation references like [1] (pp. 22-31)
+  {
+    regex: /\[(\d+)\]\s*\(pp?\.?\s*(\d+)(?:\s*-\s*(\d+))?\)/gi,
+    extractPages: (match: RegExpExecArray) => {
+      const docNumber = match[1];
+      const startPage = match[2];
+      const endPage = match[3] || startPage;
+      return {
+        startPage: parseInt(startPage, 10),
+        endPage: parseInt(endPage, 10),
+        fullMatch: match[0],
+        documentRef: `Reference ${docNumber}`
+      };
+    }
   }
 ];
 
