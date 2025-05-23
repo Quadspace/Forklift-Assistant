@@ -87,25 +87,18 @@ export default function MarkdownWithPDFRefs({ content, files }: MarkdownWithPDFR
     setProcessedContent(contentParts);
   }, [content, files]);
 
-  // Render the array of React elements and strings
   return (
     <>
-      {(processedContent
-        .flat(Infinity)
-        .reduce<React.ReactNode[]>((acc, x, i) => {
-          if (typeof x === 'string' || typeof x === 'number') {
-            acc.push(x);
-          } else if (
-            x &&
-            typeof x === 'object' &&
-            'type' in x &&
-            !Array.isArray(x) &&
-            React.isValidElement(x)
-          ) {
-            acc.push(React.cloneElement(x, { key: x.key ?? i }));
-          }
-          return acc;
-        }, []))}
+      {(Array.isArray(processedContent) ? processedContent.flat() : [processedContent])
+        .filter(x => typeof x === 'string' || typeof x === 'number' || React.isValidElement(x))
+        .map((x, i) =>
+          typeof x === 'string' || typeof x === 'number'
+            ? x
+            : React.isValidElement(x)
+            ? React.cloneElement(x, { key: x.key ?? i })
+            : null
+        )
+        .filter(x => x !== null)}
       {isModalOpen && (
         <PDFPreviewModal
           isOpen={isModalOpen}
