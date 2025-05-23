@@ -32,13 +32,12 @@ export default function MarkdownWithPDFRefs({ content, files }: MarkdownWithPDFR
   };
 
   useEffect(() => {
-    // Process the content to find and replace PDF references
     const references = detectPageReferences(content);
     if (references.length === 0) {
       setProcessedContent([content]);
       return;
     }
-    // Build an array of React elements and strings
+
     const contentParts: React.ReactNode[] = [];
     let lastIndex = 0;
     references.forEach((ref, i) => {
@@ -54,13 +53,12 @@ export default function MarkdownWithPDFRefs({ content, files }: MarkdownWithPDFR
             href="#"
             onClick={e => {
               e.preventDefault();
-              setModalProps({
-                pdfUrl: `/api/files/${matchingFile.id}/content`,
-                fileName: matchingFile.name,
-                startPage: ref.startPage,
-                endPage: ref.endPage
-              });
-              setIsModalOpen(true);
+              handleOpenModal(
+                `/api/files/${matchingFile.id}/content`,
+                matchingFile.name,
+                ref.startPage,
+                ref.endPage
+              );
             }}
             className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline inline-flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-700 shadow-sm"
             title={displayText}
@@ -85,20 +83,11 @@ export default function MarkdownWithPDFRefs({ content, files }: MarkdownWithPDFR
       contentParts.push(content.substring(lastIndex));
     }
     setProcessedContent(contentParts);
-  }, [content, files]);
+  }, [content, files, handleOpenModal]);
 
   return (
     <>
-      {(Array.isArray(processedContent) ? processedContent.flat() : [processedContent])
-        .filter(x => typeof x === 'string' || typeof x === 'number' || React.isValidElement(x))
-        .map((x, i) =>
-          typeof x === 'string' || typeof x === 'number'
-            ? x
-            : React.isValidElement(x)
-            ? React.cloneElement(x, { key: x.key ?? i })
-            : null
-        )
-        .filter(x => x !== null)}
+      {processedContent as any}
       {isModalOpen && (
         <PDFPreviewModal
           isOpen={isModalOpen}
