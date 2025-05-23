@@ -394,116 +394,71 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       const ref = references[i];
       const matchingFile = findMatchingPDFFile(ref, files);
       
-      console.log(`Processing reference: ${ref.fullMatch}, matching file:`, matchingFile);
-      
       if (matchingFile) {
         const beforeRef = processedContent.substring(0, ref.matchIndex);
         const afterRef = processedContent.substring(ref.matchIndex + ref.fullMatch.length);
         const pdfUrl = `/api/files/${matchingFile.id}/content`;
-        
-        // Enhanced reference display with citation information
-        let refText = ref.fullMatch;
-        // For citation references, add a more descriptive text
-        if (ref.fullMatch.match(/\[\d+,.*\]/)) {
-          refText = `PDF: ${matchingFile.name} (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
-        } else if (ref.fullMatch.match(/\[\d+\]/)) {
-          refText = `PDF: ${matchingFile.name}`;
-        } else {
-          refText = `PDF: ${matchingFile.name} (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
-        }
-        
-        const pdfLink = `[${refText}](pdf:${pdfUrl}|${matchingFile.name}|${ref.startPage}|${ref.endPage || ref.startPage})`;
-        console.log(`Created PDF link: ${pdfLink}`);
-        
+        // Clean display text
+        const displayText = `PDF: ${matchingFile.name} (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
+        // Clean hash-based link
+        const pdfLink = `[${displayText}](#pdf-preview?url=${encodeURIComponent(pdfUrl)}&file=${encodeURIComponent(matchingFile.name)}&start=${ref.startPage}&end=${ref.endPage || ref.startPage})`;
         processedContent = `${beforeRef}${pdfLink}${afterRef}`;
       }
     }
-    
     // Also, scan the content for any brackets that might be citation references but weren't detected
     const bracketCitationRegex = /\[(\d+)\]/g;
     let match;
     while ((match = bracketCitationRegex.exec(processedContent)) !== null) {
-      // This might be a citation reference that wasn't detected by our patterns
       const fullMatch = match[0];
       const docNumber = match[1];
       const matchIndex = match.index;
-      
-      console.log(`Found potential bracket citation: ${fullMatch} at index ${matchIndex}`);
-      
-      // Only process if it's not already part of a link
-      if (!processedContent.substring(Math.max(0, matchIndex - 20), matchIndex).includes('](pdf:')) {
-        console.log(`Citation ${fullMatch} is not part of an existing link`);
-        // Try to find a matching file based on the docNumber
+      if (!processedContent.substring(Math.max(0, matchIndex - 20), matchIndex).includes('](#pdf-preview')) {
         if (files.length >= parseInt(docNumber, 10)) {
-          // Get files sorted alphabetically
           const sortedFiles = [...files].sort((a, b) => a.name.localeCompare(b.name));
-          console.log('Sorted files for bracket citation:', sortedFiles.map(f => f.name));
-          // Find the file at index docNumber-1 (0-based index for 1-based reference)
           const matchingFile = sortedFiles[parseInt(docNumber, 10) - 1];
-          
           if (matchingFile) {
-            console.log(`Found matching file for citation ${fullMatch}:`, matchingFile.name);
             const pdfUrl = `/api/files/${matchingFile.id}/content`;
             const beforeRef = processedContent.substring(0, matchIndex);
             const afterRef = processedContent.substring(matchIndex + fullMatch.length);
-            const refText = `PDF: ${matchingFile.name}`;
-            
-            const pdfLink = `[${refText}](pdf:${pdfUrl}|${matchingFile.name}|1)`;
-            console.log(`Created PDF link for bracket citation: ${pdfLink}`);
-            
+            const displayText = `PDF: ${matchingFile.name}`;
+            const pdfLink = `[${displayText}](#pdf-preview?url=${encodeURIComponent(pdfUrl)}&file=${encodeURIComponent(matchingFile.name)}&start=1)`;
             processedContent = `${beforeRef}${pdfLink}${afterRef}`;
-            // Adjust the regex lastIndex to account for the replacement
             bracketCitationRegex.lastIndex = matchIndex + pdfLink.length;
           }
         }
       }
     }
-
     return (
       <ReactMarkdown
         components={{
           a: ({ node, href, ...props }) => {
-            if (href?.startsWith('pdf:')) {
-              console.log('Rendering PDF link with href:', href);
-              // Parse the PDF URL and parameters
-              const [pdfUrl, fileName, startPage, endPage] = href.substring(4).split('|');
-              // Extract text to search for based on what was clicked
+            if (href?.startsWith('#pdf-preview')) {
+              const queryParams = new URLSearchParams(href.substring(href.indexOf('?')));
+              const pdfUrl = queryParams.get('url') || '';
+              const fileName = queryParams.get('file') || '';
+              const startPage = parseInt(queryParams.get('start') || '1', 10);
+              const endPage = queryParams.has('end') ? parseInt(queryParams.get('end') || '1', 10) : undefined;
               const refText = Array.isArray(props.children) 
                 ? props.children.filter(child => typeof child === 'string').join(' ') 
                 : typeof props.children === 'string' 
                   ? props.children 
                   : '';
-              
-              // Get just the PDF name for searching - remove any prefixes and page references
               const searchText = refText
                 .replace(/^PDF:\s*/, '')
                 .replace(/\s*\(p\.\s*\d+(?:-\d+)?\)$/, '')
                 .replace(/^\[.*\]\s*/, '')
                 .trim();
-              
-              console.log('PDF link parameters:', {
-                pdfUrl,
-                fileName,
-                startPage: parseInt(startPage, 10),
-                endPage: endPage ? parseInt(endPage, 10) : undefined,
-                searchText
-              });
-              
+              const displayText = refText || `PDF: ${fileName} (p. ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})`;
               return (
                 <a 
                   href="#"
                   onClick={(e) => {
                     e.preventDefault();
-                    console.log('PDF link clicked, opening modal with:', {
-                      pdfUrl,
-                      fileName,
-                      startPage: parseInt(startPage, 10)
-                    });
                     handleOpenPdfModal(
                       pdfUrl, 
                       fileName, 
-                      parseInt(startPage, 10), 
-                      endPage ? parseInt(endPage, 10) : undefined,
+                      startPage, 
+                      endPage,
                       searchText
                     );
                   }}
@@ -518,7 +473,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                   >
                     <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
                   </svg>
-                  <span className="truncate max-w-[200px]">{props.children}</span>
+                  <span className="truncate max-w-[200px]">{displayText}</span>
                 </a>
               );
             }
