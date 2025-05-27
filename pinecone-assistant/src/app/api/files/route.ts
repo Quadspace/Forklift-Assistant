@@ -37,7 +37,8 @@ export async function GET() {
       created_at: file.created_on,
       updated_at: file.updated_on,
       status: file.status,
-      metadata: file.metadata
+      metadata: file.metadata,
+      signed_url: file.signed_url
     }));
 
     return NextResponse.json({

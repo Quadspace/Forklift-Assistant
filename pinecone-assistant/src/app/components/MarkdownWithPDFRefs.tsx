@@ -46,16 +46,22 @@ export default function MarkdownWithPDFRefs({ content, files }: MarkdownWithPDFR
       }
       const matchingFile = findMatchingPDFFile(ref, files);
       if (matchingFile) {
-        const displayText = `PDF: ${matchingFile.name} (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
+        const fileNameOnly = matchingFile.name.split(/[\\/]/).pop() || matchingFile.name;
+        const displayText = `PDF: ${fileNameOnly} (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
         contentParts.push(
           <a
             key={`pdf-link-${i}`}
             href="#"
             onClick={e => {
               e.preventDefault();
+              const pdfUrlToOpen = matchingFile.signed_url;
+              if (!pdfUrlToOpen) {
+                console.error("Error: matchingFile.signed_url is missing in MarkdownWithPDFRefs for file:", matchingFile.name);
+                return; 
+              }
               handleOpenModal(
-                `/api/files/${matchingFile.id}/content`,
-                matchingFile.name,
+                pdfUrlToOpen,
+                fileNameOnly,
                 ref.startPage,
                 ref.endPage
               );

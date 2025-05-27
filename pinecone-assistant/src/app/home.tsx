@@ -397,12 +397,15 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       if (matchingFile) {
         const beforeRef = processedContent.substring(0, ref.matchIndex);
         const afterRef = processedContent.substring(ref.matchIndex + ref.fullMatch.length);
-        const pdfUrl = `/api/files/${matchingFile.id}/content`;
-        // Clean display text
-        const displayText = `PDF: ${matchingFile.name} (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
-        // Clean hash-based link
-        const pdfLink = `[${displayText}](#pdf-preview?url=${encodeURIComponent(pdfUrl)}&file=${encodeURIComponent(matchingFile.name)}&start=${ref.startPage}&end=${ref.endPage || ref.startPage})`;
-        processedContent = `${beforeRef}${pdfLink}${afterRef}`;
+        const pdfUrl = matchingFile.signed_url; 
+        if (!pdfUrl) {
+          console.error("Error: matchingFile.signed_url is missing for file:", matchingFile.name);
+        } else {
+          const fileNameOnly = matchingFile.name.split(/[\\/]/).pop() || matchingFile.name;
+          const displayText = `PDF: ${fileNameOnly} (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
+          const pdfLink = `[${displayText}](#pdf-preview?url=${encodeURIComponent(pdfUrl)}&file=${encodeURIComponent(fileNameOnly)}&start=${ref.startPage}&end=${ref.endPage || ref.startPage})`;
+          processedContent = `${beforeRef}${pdfLink}${afterRef}`;
+        }
       }
     }
     // Also, scan the content for any brackets that might be citation references but weren't detected
@@ -417,13 +420,18 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           const sortedFiles = [...files].sort((a, b) => a.name.localeCompare(b.name));
           const matchingFile = sortedFiles[parseInt(docNumber, 10) - 1];
           if (matchingFile) {
-            const pdfUrl = `/api/files/${matchingFile.id}/content`;
-            const beforeRef = processedContent.substring(0, matchIndex);
-            const afterRef = processedContent.substring(matchIndex + fullMatch.length);
-            const displayText = `PDF: ${matchingFile.name}`;
-            const pdfLink = `[${displayText}](#pdf-preview?url=${encodeURIComponent(pdfUrl)}&file=${encodeURIComponent(matchingFile.name)}&start=1)`;
-            processedContent = `${beforeRef}${pdfLink}${afterRef}`;
-            bracketCitationRegex.lastIndex = matchIndex + pdfLink.length;
+            const pdfUrl = matchingFile.signed_url;
+            if (!pdfUrl) {
+              console.error("Error: matchingFile.signed_url is missing for file (bracket citation):", matchingFile.name);
+            } else {
+              const beforeRef = processedContent.substring(0, matchIndex);
+              const afterRef = processedContent.substring(matchIndex + fullMatch.length);
+              const fileNameOnly = matchingFile.name.split(/[\\/]/).pop() || matchingFile.name;
+              const displayText = `PDF: ${fileNameOnly}`;
+              const pdfLink = `[${displayText}](#pdf-preview?url=${encodeURIComponent(pdfUrl)}&file=${encodeURIComponent(fileNameOnly)}&start=1)`;
+              processedContent = `${beforeRef}${pdfLink}${afterRef}`;
+              bracketCitationRegex.lastIndex = matchIndex + pdfLink.length;
+            }
           }
         }
       }
@@ -434,8 +442,11 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           a: ({ node, href, ...props }) => {
             if (href?.startsWith('#pdf-preview')) {
               const queryParams = new URLSearchParams(href.substring(href.indexOf('?')));
-              const pdfUrl = queryParams.get('url') || '';
-              const fileName = queryParams.get('file') || '';
+              const pdfUrlFromLink = queryParams.get('url') || '';
+              // Ensure fileNameForModal uses only the filename part
+              let fileNameForModal = queryParams.get('file') || '';
+              fileNameForModal = fileNameForModal.split(/[\\/]/).pop() || fileNameForModal;
+
               const startPage = parseInt(queryParams.get('start') || '1', 10);
               const endPage = queryParams.has('end') ? parseInt(queryParams.get('end') || '1', 10) : undefined;
               const refText = Array.isArray(props.children) 
@@ -448,21 +459,21 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                 .replace(/\s*\(p\.\s*\d+(?:-\d+)?\)$/, '')
                 .replace(/^\[.*\]\s*/, '')
                 .trim();
-              const displayText = refText || `PDF: ${fileName} (p. ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})`;
+              const displayText = refText || `PDF: ${fileNameForModal} (p. ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})`;
               return (
                 <a 
                   href="#"
                   onClick={(e) => {
                     e.preventDefault();
                     handleOpenPdfModal(
-                      pdfUrl, 
-                      fileName, 
+                      pdfUrlFromLink, 
+                      fileNameForModal, 
                       startPage, 
                       endPage,
                       searchText
                     );
                   }}
-                  title={`View ${fileName}${startPage ? ` (page ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})` : ''}`}
+                  title={`View ${fileNameForModal}${startPage ? ` (page ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})` : ''}`}
                   className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline inline-flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-700 shadow-sm"
                 >
                   <svg
