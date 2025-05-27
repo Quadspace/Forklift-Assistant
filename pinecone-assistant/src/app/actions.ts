@@ -89,6 +89,8 @@ export async function chat(messages: Message[]) {
           clearTimeout(forceCloseTimeout);
           if (activityTimeout) clearTimeout(activityTimeout);
         }
+      } else if (message?.choices[0]?.delta?.content) {
+        stream.update(event.data);
       } else if (message?.choices[0]?.finish_reason) {
         console.log('Stream finished by assistant with finish_reason:', message.choices[0].finish_reason);
         eventSource.close();
@@ -99,8 +101,6 @@ export async function chat(messages: Message[]) {
           clearTimeout(forceCloseTimeout);
           if (activityTimeout) clearTimeout(activityTimeout);
         }
-      } else if (message?.choices[0]?.delta?.content) {
-        stream.update(event.data);
       } else {
         // Potentially empty but valid JSON, or unexpected structure not yet handled
         console.warn('Received message with no content, finish_reason, or empty choices:', message);
@@ -121,7 +121,23 @@ export async function chat(messages: Message[]) {
     } catch (e) {
       console.error('Error parsing event.data:', e);
       console.error('Problematic event.data content was:', event.data);
-      // Don't close stream on parse errors, just log them
+      // Close stream on parse errors
+      if (!streamClosed) {
+        try {
+          stream.error({ message: 'Error parsing stream data.', details: event.data });
+          streamClosed = true;
+          // Clear timeouts
+          clearTimeout(forceCloseTimeout);
+          if (activityTimeout) clearTimeout(activityTimeout);
+        } catch (closeError) {
+          console.warn('Error closing stream after parse error:', closeError);
+        }
+      }
+      try {
+        eventSource.close(); // Also close the event source itself
+      } catch (esCloseError) {
+        console.warn('Error closing EventSource after parse error:', esCloseError);
+      }
     }
   };
 
