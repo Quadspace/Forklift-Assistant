@@ -504,14 +504,11 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
 
     // For assistant messages, look for PDF references
     console.log('🔍 Processing assistant message for PDF references...');
-    console.log('📄 Message content:', content);
-    console.log('📁 Available files:', files.map(f => ({ id: f.id, name: f.name, hasSignedUrl: !!f.signed_url })));
     
     const references = detectPageReferences(content);
     
     // Enhanced debug logging
-    console.log('🎯 Detected PDF references:', references);
-    console.log('📊 Reference count:', references.length);
+    console.log('🎯 Detected PDF references:', references.length > 0 ? references : 'None found');
     
     if (references.length === 0) {
       console.log('❌ No PDF references detected, rendering normally');

@@ -30,14 +30,16 @@ export function detectPageReferences(content: string): PDFReference[] {
         const startPage = parseInt(match[2], 10);
         const endPage = match[3] ? parseInt(match[3], 10) : startPage;
         
-        references.push({
+        const ref = {
           fullMatch: match[0],
           matchIndex: index,
           startPage,
           endPage,
           documentNumber: docNumber,
           searchText: `Document ${docNumber}, pages ${startPage}${endPage !== startPage ? `-${endPage}` : ''}`
-        });
+        };
+        
+        references.push(ref);
       }
     },
     
@@ -112,12 +114,15 @@ export function detectPageReferences(content: string): PDFReference[] {
   ];
   
   // Apply each pattern to find references
-  patterns.forEach(pattern => {
+  patterns.forEach((pattern, patternIndex) => {
     let match;
-    const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
-    
-    while ((match = regex.exec(content)) !== null) {
+    while ((match = pattern.regex.exec(content)) !== null) {
       pattern.handler(match, match.index);
+      
+      // Prevent infinite loop for global regex
+      if (!pattern.regex.global) {
+        break;
+      }
     }
   });
   
@@ -131,12 +136,8 @@ export function detectPageReferences(content: string): PDFReference[] {
  */
 export function findMatchingPDFFile(reference: PDFReference, files: any[]): any | null {
   if (!files || files.length === 0) {
-    console.log('❌ No files available for matching');
     return null;
   }
-  
-  console.log('🔍 Finding matching file for reference:', reference);
-  console.log('📁 Available files:', files.map(f => ({ name: f.name, id: f.id })));
   
   // Sort files consistently for document number matching
   const sortedFiles = [...files].sort((a, b) => a.name.localeCompare(b.name));
@@ -144,7 +145,6 @@ export function findMatchingPDFFile(reference: PDFReference, files: any[]): any 
   // Method 1: Match by document number (for bracket citations)
   if (reference.documentNumber && reference.documentNumber > 0 && reference.documentNumber <= sortedFiles.length) {
     const matchedFile = sortedFiles[reference.documentNumber - 1];
-    console.log(`✅ Matched by document number ${reference.documentNumber}:`, matchedFile.name);
     return matchedFile;
   }
   
@@ -156,7 +156,6 @@ export function findMatchingPDFFile(reference: PDFReference, files: any[]): any 
     );
     
     if (exactMatch) {
-      console.log(`✅ Matched by filename "${reference.fileName}":`, exactMatch.name);
       return exactMatch;
     }
   }
@@ -175,17 +174,14 @@ export function findMatchingPDFFile(reference: PDFReference, files: any[]): any 
     });
     
     if (partialMatch) {
-      console.log(`✅ Matched by partial name "${reference.fileName}":`, partialMatch.name);
       return partialMatch;
     }
   }
   
   // Method 4: Default to first file if no specific match found (for simple page references)
   if (!reference.documentNumber && !reference.fileName && files.length > 0) {
-    console.log('📄 Using first available file as default:', sortedFiles[0].name);
     return sortedFiles[0];
   }
   
-  console.log('❌ No matching file found for reference:', reference);
   return null;
-} 
+}
