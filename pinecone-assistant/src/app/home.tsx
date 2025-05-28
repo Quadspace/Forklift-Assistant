@@ -528,6 +528,74 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     console.log('🗂️ Current referencedFiles state:', referencedFiles);
     console.log('📋 referencedFiles count:', referencedFiles.length);
     
+    // Check if content has already been processed (contains PDF preview links)
+    if (content.includes('#pdf-preview')) {
+      console.log('⚠️ Content already contains PDF preview links, skipping reprocessing');
+      return (
+        <ReactMarkdown
+          components={{
+            a: ({ node, href, ...props }) => {
+              if (href?.startsWith('#pdf-preview')) {
+                const queryParams = new URLSearchParams(href.substring(href.indexOf('?')));
+                const pdfUrlFromLink = queryParams.get('url') || '';
+                let fileNameForModal = queryParams.get('file') || '';
+                fileNameForModal = fileNameForModal.split(/[\\/]/).pop() || fileNameForModal;
+
+                const startPage = parseInt(queryParams.get('start') || '1', 10);
+                const endPage = queryParams.has('end') ? parseInt(queryParams.get('end') || '1', 10) : undefined;
+                const refText = Array.isArray(props.children) 
+                  ? props.children.filter(child => typeof child === 'string').join(' ') 
+                  : typeof props.children === 'string' 
+                    ? props.children 
+                    : '';
+                const searchText = refText
+                  .replace(/^PDF:\s*/, '')
+                  .replace(/\s*\(p\.\s*\d+(?:-\d+)?\)$/, '')
+                  .replace(/^\[.*\]\s*/, '')
+                  .trim();
+                const displayText = refText || `PDF: ${fileNameForModal} (p. ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})`;
+                
+                return (
+                  <a 
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleOpenPdfModal(
+                        pdfUrlFromLink, 
+                        fileNameForModal, 
+                        startPage, 
+                        endPage,
+                        searchText
+                      );
+                    }}
+                    title={`View ${fileNameForModal}${startPage ? ` (page ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})` : ''}`}
+                    className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline inline-flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-700 shadow-sm"
+                  >
+                    <svg
+                      className="w-4 h-4 mr-1 flex-shrink-0"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
+                    </svg>
+                    <span className="truncate max-w-[200px]">{displayText}</span>
+                  </a>
+                );
+              }
+              return (
+                <a {...props} href={href} className="text-blue-600 dark:text-blue-400 hover:underline">
+                  🔗 {props.children}
+                </a>
+              );
+            },
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      );
+    }
+    
     // Extract references directly from the current content
     const currentReferences = extractReferences(content);
     console.log('🔗 References extracted from current content:', currentReferences);
