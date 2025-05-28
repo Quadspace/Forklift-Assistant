@@ -41,7 +41,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     endPage: undefined as number | undefined,
     searchText: undefined as string | undefined
   });
-
+  
   // Simplified scroll function that ONLY targets the chat container with ID
   const scrollToBottom = useCallback(() => {
     // Clear any existing timeout
@@ -522,16 +522,30 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       );
     }
 
-    // For assistant messages, look for PDF references
-    console.log('🔍 Processing assistant message for PDF references...');
-    console.log('📄 Full message content:', JSON.stringify(content));
-    console.log('🗂️ Current referencedFiles state:', referencedFiles);
-    console.log('📋 referencedFiles count:', referencedFiles.length);
+    // For assistant messages during streaming, render as-is without processing
+    if (isStreaming) {
+      console.log('🔄 Streaming in progress, rendering content as-is without PDF processing');
+      return (
+        <ReactMarkdown
+          components={{
+            a: ({ node, ...props }) => (
+              <a {...props} className="text-blue-600 dark:text-blue-400 hover:underline">
+                🔗 {props.children}
+              </a>
+            ),
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      );
+    }
+
+    // Only process PDF references when streaming is complete
+    console.log('✅ Streaming complete, processing PDF references...');
     
-    // Check if content has already been processed (contains PDF preview links)
-    // This prevents recursive processing during streaming
+    // Check if content already contains processed PDF links
     if (content.includes('#pdf-preview') || content.includes('[PDF:')) {
-      console.log('⚠️ Content already contains PDF links, rendering as-is without reprocessing');
+      console.log('⚠️ Content already contains PDF links, rendering as-is');
       return (
         <ReactMarkdown
           components={{
@@ -578,7 +592,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                       viewBox="0 0 20 20"
                       xmlns="http://www.w3.org/2000/svg"
                     >
-                      <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
+                      <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 005.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
                     </svg>
                     <span className="truncate max-w-[200px]">{displayText}</span>
                   </a>
@@ -717,7 +731,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                     viewBox="0 0 20 20"
                     xmlns="http://www.w3.org/2000/svg"
                   >
-                    <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
+                    <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 005.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
                   </svg>
                   <span className="truncate max-w-[200px]">{displayText}</span>
                 </a>
