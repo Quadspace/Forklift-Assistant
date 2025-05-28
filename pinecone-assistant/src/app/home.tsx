@@ -529,8 +529,9 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     console.log('📋 referencedFiles count:', referencedFiles.length);
     
     // Check if content has already been processed (contains PDF preview links)
-    if (content.includes('#pdf-preview')) {
-      console.log('⚠️ Content already contains PDF preview links, skipping reprocessing');
+    // This prevents recursive processing during streaming
+    if (content.includes('#pdf-preview') || content.includes('[PDF:')) {
+      console.log('⚠️ Content already contains PDF links, rendering as-is without reprocessing');
       return (
         <ReactMarkdown
           components={{
