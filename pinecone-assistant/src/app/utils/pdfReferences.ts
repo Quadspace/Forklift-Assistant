@@ -1,261 +1,191 @@
 /**
- * Regex patterns for detecting different types of page references in text
+ * Enhanced PDF reference detection utility
+ * Detects various formats of PDF references in text and extracts page information
  */
-export const PAGE_REFERENCE_PATTERNS = [
-  // Matches patterns like "pp. 5-13", "p. 42", "page 7", "pages 8-10"
-  {
-    regex: /(pp?\.?\s*(\d+)(?:\s*-\s*(\d+))?)|(?:pages?\s+(\d+)(?:\s*-\s*(\d+))?)/gi,
-    extractPages: (match: RegExpExecArray) => {
-      // Check which capturing group has the page numbers
-      const startPage = match[2] || match[4] || '1';
-      const endPage = match[3] || match[5] || startPage;
-      return {
-        startPage: parseInt(startPage, 10),
-        endPage: parseInt(endPage, 10),
-        fullMatch: match[0]
-      };
-    }
-  },
-  // Matches direct PDF filename references like "WP2000S.pdf", "manual.pdf", etc.
-  {
-    regex: /([A-Za-z0-9_\-\s]+\.pdf)/gi,
-    extractPages: (match: RegExpExecArray) => {
-      return {
-        startPage: 1,
-        endPage: 1,
-        fullMatch: match[0],
-        documentRef: match[1].trim()
-      };
-    }
-  },
-  // Matches WP document numbers with page references
-  {
-    regex: /(WP\s+\d+)(?:.*?)(?:p\.?\s*(\d+)(?:\s*-\s*(\d+))?)/gi,
-    extractPages: (match: RegExpExecArray) => {
-      const startPage = match[2] || '1';
-      const endPage = match[3] || startPage;
-      return {
-        startPage: parseInt(startPage, 10),
-        endPage: parseInt(endPage, 10),
-        fullMatch: match[0],
-        documentRef: match[1]
-      };
-    }
-  },
-  // Matches citation references like [1, pp.22-31] with flexible spacing
-  {
-    regex: /\[(\d+),\s*pp?\.?\s*(\d+)(?:\s*-\s*(\d+))?\]/gi,
-    extractPages: (match: RegExpExecArray) => {
-      const docNumber = match[1];
-      const startPage = match[2];
-      const endPage = match[3] || startPage;
-      return {
-        startPage: parseInt(startPage, 10),
-        endPage: parseInt(endPage, 10),
-        fullMatch: match[0],
-        documentRef: `Reference ${docNumber}`
-      };
-    }
-  },
-  // Exact match for the format like "[1, pp. 22-31]" with space after comma and period
-  {
-    regex: /\[(\d+),\s+pp\.\s+(\d+)(?:\s*-\s*(\d+))?\]/gi,
-    extractPages: (match: RegExpExecArray) => {
-      const docNumber = match[1];
-      const startPage = match[2];
-      const endPage = match[3] || startPage;
-      return {
-        startPage: parseInt(startPage, 10),
-        endPage: parseInt(endPage, 10),
-        fullMatch: match[0],
-        documentRef: `Reference ${docNumber}`
-      };
-    }
-  },
-  // Matches another common citation format like [1] pp. 22-31
-  {
-    regex: /\[(\d+)\]\s+pp?\.?\s*(\d+)(?:\s*-\s*(\d+))?/gi,
-    extractPages: (match: RegExpExecArray) => {
-      const docNumber = match[1];
-      const startPage = match[2];
-      const endPage = match[3] || startPage;
-      return {
-        startPage: parseInt(startPage, 10),
-        endPage: parseInt(endPage, 10),
-        fullMatch: match[0],
-        documentRef: `Reference ${docNumber}`
-      };
-    }
-  },
-  // Matches simple citation references like [1] (uses default page 1)
-  {
-    regex: /\[(\d+)\](?!\s*\()/g,
-    extractPages: (match: RegExpExecArray) => {
-      const docNumber = match[1];
-      return {
-        startPage: 1,
-        endPage: 1,
-        fullMatch: match[0],
-        documentRef: `Reference ${docNumber}`
-      };
-    }
-  },
-  // Matches citation references like [1] (pp. 22-31)
-  {
-    regex: /\[(\d+)\]\s*\(pp?\.?\s*(\d+)(?:\s*-\s*(\d+))?\)/gi,
-    extractPages: (match: RegExpExecArray) => {
-      const docNumber = match[1];
-      const startPage = match[2];
-      const endPage = match[3] || startPage;
-      return {
-        startPage: parseInt(startPage, 10),
-        endPage: parseInt(endPage, 10),
-        fullMatch: match[0],
-        documentRef: `Reference ${docNumber}`
-      };
-    }
-  }
-];
 
-/**
- * Interface for a detected page reference
- */
-export interface PageReference {
+export interface PDFReference {
+  fullMatch: string;
+  matchIndex: number;
   startPage: number;
   endPage: number;
-  fullMatch: string;
-  documentRef?: string;
-  matchIndex: number;
+  documentNumber?: number;
+  fileName?: string;
+  searchText?: string;
 }
 
 /**
- * Detects PDF page references in a text string
- * @param text - The text to search for page references
- * @returns Array of page references found
+ * Detects PDF page references in text content
+ * Supports multiple formats including bracket citations, page ranges, and direct PDF mentions
  */
-export function detectPageReferences(text: string): PageReference[] {
-  const references: PageReference[] = [];
+export function detectPageReferences(content: string): PDFReference[] {
+  const references: PDFReference[] = [];
   
-  console.log('Starting detectPageReferences with text:', text.substring(0, 100) + '...');
-  
-  // Apply each regex pattern
-  PAGE_REFERENCE_PATTERNS.forEach((pattern, index) => {
-    console.log(`Trying pattern #${index}:`, pattern.regex);
-    const regex = new RegExp(pattern.regex);
-    let match: RegExpExecArray | null;
+  // Enhanced patterns for different reference formats
+  const patterns = [
+    // Bracket citations with page ranges: [5, pp. 25-31], [2, p. 42], [1, pages 15-20]
+    {
+      regex: /\[(\d+),?\s*(?:pp?\.?|pages?)\s*(\d+)(?:\s*[-–—]\s*(\d+))?\]/gi,
+      handler: (match: RegExpMatchArray, index: number) => {
+        const docNumber = parseInt(match[1], 10);
+        const startPage = parseInt(match[2], 10);
+        const endPage = match[3] ? parseInt(match[3], 10) : startPage;
+        
+        references.push({
+          fullMatch: match[0],
+          matchIndex: index,
+          startPage,
+          endPage,
+          documentNumber: docNumber,
+          searchText: `Document ${docNumber}, pages ${startPage}${endPage !== startPage ? `-${endPage}` : ''}`
+        });
+      }
+    },
     
-    // Find all matches in the text
-    while ((match = regex.exec(text)) !== null) {
-      console.log(`Pattern #${index} found match:`, match[0]);
-      const extracted = pattern.extractPages(match);
-      references.push({
-        startPage: extracted.startPage,
-        endPage: extracted.endPage,
-        fullMatch: extracted.fullMatch,
-        documentRef: 'documentRef' in extracted ? extracted.documentRef as string : undefined,
-        matchIndex: match.index
-      });
+    // Simple bracket citations: [5], [2], [1]
+    {
+      regex: /\[(\d+)\]/g,
+      handler: (match: RegExpMatchArray, index: number) => {
+        const docNumber = parseInt(match[1], 10);
+        
+        references.push({
+          fullMatch: match[0],
+          matchIndex: index,
+          startPage: 1,
+          endPage: 1,
+          documentNumber: docNumber,
+          searchText: `Document ${docNumber}`
+        });
+      }
+    },
+    
+    // Page references: pp. 25-31, p. 42, pages 15-20
+    {
+      regex: /(?:pp?\.?|pages?)\s*(\d+)(?:\s*[-–—]\s*(\d+))?/gi,
+      handler: (match: RegExpMatchArray, index: number) => {
+        const startPage = parseInt(match[1], 10);
+        const endPage = match[2] ? parseInt(match[2], 10) : startPage;
+        
+        references.push({
+          fullMatch: match[0],
+          matchIndex: index,
+          startPage,
+          endPage,
+          searchText: `Pages ${startPage}${endPage !== startPage ? `-${endPage}` : ''}`
+        });
+      }
+    },
+    
+    // Direct PDF filename mentions: WP2000S.pdf, manual.pdf
+    {
+      regex: /([A-Za-z0-9_\-\s]+\.pdf)/gi,
+      handler: (match: RegExpMatchArray, index: number) => {
+        const fileName = match[1].trim();
+        
+        references.push({
+          fullMatch: match[0],
+          matchIndex: index,
+          startPage: 1,
+          endPage: 1,
+          fileName,
+          searchText: fileName.replace('.pdf', '')
+        });
+      }
+    },
+    
+    // Document references with pages: WP 2000 p. 23, Manual page 45
+    {
+      regex: /([A-Za-z0-9_\-\s]+)\s+(?:p\.?|page)\s*(\d+)/gi,
+      handler: (match: RegExpMatchArray, index: number) => {
+        const docName = match[1].trim();
+        const pageNum = parseInt(match[2], 10);
+        
+        references.push({
+          fullMatch: match[0],
+          matchIndex: index,
+          startPage: pageNum,
+          endPage: pageNum,
+          fileName: docName,
+          searchText: `${docName} page ${pageNum}`
+        });
+      }
+    }
+  ];
+  
+  // Apply each pattern to find references
+  patterns.forEach(pattern => {
+    let match;
+    const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
+    
+    while ((match = regex.exec(content)) !== null) {
+      pattern.handler(match, match.index);
     }
   });
   
-  console.log(`Found ${references.length} references in total`);
-  
-  // Sort references by their position in the text
-  return references.sort((a, b) => a.matchIndex - b.matchIndex);
+  // Sort references by their position in the text (reverse order for processing)
+  return references.sort((a, b) => b.matchIndex - a.matchIndex);
 }
 
 /**
- * Finds a matching PDF file for a page reference
- * @param reference - The page reference
- * @param files - Array of available PDF files
- * @returns The matching PDF file or undefined if not found
+ * Finds a matching PDF file from the available files list
+ * Supports matching by document number, filename, or partial name matching
  */
-export function findMatchingPDFFile(reference: PageReference, files: any[]) {
+export function findMatchingPDFFile(reference: PDFReference, files: any[]): any | null {
   if (!files || files.length === 0) {
-    console.log('No files available to match reference:', reference);
-    return undefined;
+    console.log('❌ No files available for matching');
+    return null;
   }
   
-  // For files array debugging
-  console.log('Available PDF files:', files.map(f => f.name));
+  console.log('🔍 Finding matching file for reference:', reference);
+  console.log('📁 Available files:', files.map(f => ({ name: f.name, id: f.id })));
   
-  // If the reference has a document reference, try to match it with file names
-  if (reference.documentRef) {
-    const docRef = reference.documentRef.toLowerCase();
-    console.log(`Trying to match document reference: "${docRef}"`);
-    
-    // For direct PDF filename references (like "WP2000S.pdf")
-    if (docRef.endsWith('.pdf')) {
-      const exactMatch = files.find(file => 
-        file.name.toLowerCase() === docRef ||
-        file.name.toLowerCase().includes(docRef.replace('.pdf', ''))
-      );
-      
-      if (exactMatch) {
-        console.log(`Found exact PDF filename match: ${exactMatch.name}`);
-        return exactMatch;
-      }
-      
-      // Try partial matching for PDF filenames
-      const partialMatch = files.find(file => {
-        const fileName = file.name.toLowerCase();
-        const refName = docRef.replace('.pdf', '');
-        return fileName.includes(refName) || refName.includes(fileName.replace('.pdf', ''));
-      });
-      
-      if (partialMatch) {
-        console.log(`Found partial PDF filename match: ${partialMatch.name}`);
-        return partialMatch;
-      }
-    }
-    
-    // For numbered references like [1, pp.22-31], try to match with the first file
-    if (docRef.startsWith('reference ')) {
-      const refNumber = parseInt(docRef.replace('reference ', ''), 10);
-      console.log(`Trying to match reference ${refNumber} with available files`);
-      
-      if (!isNaN(refNumber) && refNumber > 0 && files.length >= refNumber) {
-        // Get files sorted alphabetically
-        const sortedFiles = [...files].sort((a, b) => a.name.localeCompare(b.name));
-        console.log('Sorted files:', sortedFiles.map(f => f.name));
-        
-        // Return the file at index refNumber-1 (0-based index for 1-based reference)
-        const matchedFile = sortedFiles[refNumber - 1];
-        console.log(`Matched file by reference number: ${matchedFile.name}`);
-        return matchedFile;
-      } else {
-        console.log(`Reference number ${refNumber} is invalid or out of range`);
-      }
-    }
-    
-    // Standard document reference matching
-    const matchedFile = files.find(file => 
-      file.name.toLowerCase().includes(docRef) || 
-      docRef.includes(file.name.toLowerCase().replace('.pdf', ''))
+  // Sort files consistently for document number matching
+  const sortedFiles = [...files].sort((a, b) => a.name.localeCompare(b.name));
+  
+  // Method 1: Match by document number (for bracket citations)
+  if (reference.documentNumber && reference.documentNumber > 0 && reference.documentNumber <= sortedFiles.length) {
+    const matchedFile = sortedFiles[reference.documentNumber - 1];
+    console.log(`✅ Matched by document number ${reference.documentNumber}:`, matchedFile.name);
+    return matchedFile;
+  }
+  
+  // Method 2: Match by exact filename
+  if (reference.fileName) {
+    const exactMatch = files.find(file => 
+      file.name.toLowerCase() === reference.fileName!.toLowerCase() ||
+      file.name.toLowerCase().includes(reference.fileName!.toLowerCase())
     );
     
-    if (matchedFile) {
-      console.log(`Matched file by name similarity: ${matchedFile.name}`);
-      return matchedFile;
-    } else {
-      console.log(`No file matched document reference: "${docRef}"`);
+    if (exactMatch) {
+      console.log(`✅ Matched by filename "${reference.fileName}":`, exactMatch.name);
+      return exactMatch;
     }
   }
   
-  // If there's only one PDF file, use it
-  const pdfFiles = files.filter(file => file.name.toLowerCase().endsWith('.pdf'));
-  if (pdfFiles.length === 1) {
-    console.log(`Only one PDF file available, using it: ${pdfFiles[0].name}`);
-    return pdfFiles[0];
+  // Method 3: Partial matching for document names
+  if (reference.fileName) {
+    const partialMatch = files.find(file => {
+      const fileName = file.name.toLowerCase();
+      const refName = reference.fileName!.toLowerCase();
+      
+      // Remove common words and extensions for better matching
+      const cleanFileName = fileName.replace(/\.(pdf|doc|docx)$/i, '').replace(/[_\-\s]+/g, ' ');
+      const cleanRefName = refName.replace(/\.(pdf|doc|docx)$/i, '').replace(/[_\-\s]+/g, ' ');
+      
+      return cleanFileName.includes(cleanRefName) || cleanRefName.includes(cleanFileName);
+    });
+    
+    if (partialMatch) {
+      console.log(`✅ Matched by partial name "${reference.fileName}":`, partialMatch.name);
+      return partialMatch;
+    }
   }
   
-  // If we have fewer than 5 PDF files, just return the first one as a fallback
-  if (pdfFiles.length > 0 && pdfFiles.length < 5) {
-    console.log(`No specific match found, using first PDF as fallback: ${pdfFiles[0].name}`);
-    return pdfFiles[0];
+  // Method 4: Default to first file if no specific match found (for simple page references)
+  if (!reference.documentNumber && !reference.fileName && files.length > 0) {
+    console.log('📄 Using first available file as default:', sortedFiles[0].name);
+    return sortedFiles[0];
   }
   
-  // Otherwise, we don't have enough context to determine which file
-  console.log('No matching file found for reference');
-  return undefined;
+  console.log('❌ No matching file found for reference:', reference);
+  return null;
 } 

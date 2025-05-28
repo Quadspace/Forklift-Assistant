@@ -7,7 +7,7 @@ import ReactMarkdown from 'react-markdown';
 import AssistantFiles from './components/AssistantFiles';
 import { File, Reference, Message } from './types';
 import { v4 as uuidv4 } from 'uuid';
-import { detectPageReferences, findMatchingPDFFile } from './utils/pdfReferences';
+import { detectPageReferences, findMatchingPDFFile, PDFReference } from './utils/pdfReferences';
 import { processPdfUrl } from './utils/pdfUtils';
 import dynamic from 'next/dynamic';
 import EnhancedPDFPreviewModal from './components/EnhancedPDFPreviewModal';
@@ -551,43 +551,23 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           console.error("❌ Error: matchingFile.signed_url is missing for file:", matchingFile.name);
         } else {
           const fileNameOnly = matchingFile.name.split(/[\\/]/).pop() || matchingFile.name;
-          const displayText = `PDF: ${fileNameOnly} (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
+          
+          // Create appropriate display text based on reference type
+          let displayText: string;
+          if (ref.documentNumber) {
+            displayText = `PDF: ${fileNameOnly} [${ref.documentNumber}] (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
+          } else if (ref.fileName) {
+            displayText = `PDF: ${fileNameOnly} (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
+          } else {
+            displayText = `PDF: ${fileNameOnly} (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
+          }
+          
           const pdfLink = `[${displayText}](#pdf-preview?url=${encodeURIComponent(pdfUrl)}&file=${encodeURIComponent(fileNameOnly)}&start=${ref.startPage}&end=${ref.endPage || ref.startPage})`;
           processedContent = `${beforeRef}${pdfLink}${afterRef}`;
           console.log(`✅ Created PDF link for ${fileNameOnly}:`, pdfLink);
         }
       } else {
         console.log(`❌ No matching file found for reference:`, ref);
-      }
-    }
-    
-    // Also, scan the content for any brackets that might be citation references but weren't detected
-    const bracketCitationRegex = /\[(\d+)\]/g;
-    let match;
-    while ((match = bracketCitationRegex.exec(processedContent)) !== null) {
-      const fullMatch = match[0];
-      const docNumber = match[1];
-      const matchIndex = match.index;
-      if (!processedContent.substring(Math.max(0, matchIndex - 20), matchIndex).includes('](#pdf-preview')) {
-        if (files.length >= parseInt(docNumber, 10)) {
-          const sortedFiles = [...files].sort((a, b) => a.name.localeCompare(b.name));
-          const matchingFile = sortedFiles[parseInt(docNumber, 10) - 1];
-          if (matchingFile) {
-            const pdfUrl = matchingFile.signed_url;
-            if (!pdfUrl) {
-              console.error("❌ Error: matchingFile.signed_url is missing for file (bracket citation):", matchingFile.name);
-            } else {
-              const beforeRef = processedContent.substring(0, matchIndex);
-              const afterRef = processedContent.substring(matchIndex + fullMatch.length);
-              const fileNameOnly = matchingFile.name.split(/[\\/]/).pop() || matchingFile.name;
-              const displayText = `PDF: ${fileNameOnly}`;
-              const pdfLink = `[${displayText}](#pdf-preview?url=${encodeURIComponent(pdfUrl)}&file=${encodeURIComponent(fileNameOnly)}&start=1)`;
-              processedContent = `${beforeRef}${pdfLink}${afterRef}`;
-              bracketCitationRegex.lastIndex = matchIndex + pdfLink.length;
-              console.log(`✅ Created bracket citation link for ${fileNameOnly}`);
-            }
-          }
-        }
       }
     }
     
