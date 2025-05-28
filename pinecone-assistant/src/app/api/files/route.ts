@@ -34,6 +34,14 @@ export async function GET() {
 
     const data = response.data;
     
+    console.log('🔍 Raw Pinecone API response structure:', {
+      hasFiles: !!data.files,
+      filesCount: data.files?.length || 0,
+      firstFileKeys: data.files?.[0] ? Object.keys(data.files[0]) : [],
+      firstFileHasSignedUrl: data.files?.[0]?.signed_url ? 'YES' : 'NO',
+      firstFile: data.files?.[0]
+    });
+    
     if (!data.files || !Array.isArray(data.files)) {
       throw new Error('Unexpected response format: files is not an array');
     }

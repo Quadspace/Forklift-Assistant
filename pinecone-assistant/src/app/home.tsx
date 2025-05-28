@@ -128,16 +128,32 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
   const extractReferences = (content: string): Reference[] => {
     const references: Reference[] = [];
     
-    // Extract full file names from the content
-    const fileNameRegex = /([^:\n]+\.[a-zA-Z0-9]+)/g;
-    const fileMatches = content.match(fileNameRegex);
+    // Extract markdown links with signed URLs: [filename.pdf](https://storage.googleapis.com/...)
+    const markdownLinkRegex = /\[([^\]]+\.pdf)\]\((https?:\/\/[^\)]+)\)/gi;
+    let match;
     
-    if (fileMatches) {
-      fileMatches.forEach(fileName => {
-        references.push({ name: fileName.trim() });
+    while ((match = markdownLinkRegex.exec(content)) !== null) {
+      const fileName = match[1].trim();
+      const url = match[2].trim();
+      references.push({ 
+        name: fileName,
+        url: url
       });
     }
+    
+    // Fallback: Extract plain file names if no markdown links found
+    if (references.length === 0) {
+      const fileNameRegex = /([^:\n]+\.[a-zA-Z0-9]+)/g;
+      const fileMatches = content.match(fileNameRegex);
+      
+      if (fileMatches) {
+        fileMatches.forEach(fileName => {
+          references.push({ name: fileName.trim() });
+        });
+      }
+    }
 
+    console.log('📋 Extracted references from AI response:', references);
     return references;
   };
 
@@ -151,6 +167,10 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       const response = await fetch('/api/files');
       const data = await response.json();
       if (data.status === 'success') {
+        console.log('🗂️ Files fetched successfully:', data.files.length, 'files');
+        console.log('🔍 First file structure:', data.files[0]);
+        console.log('🔗 Files with signed_url:', data.files.filter((f: File) => f.signed_url).length);
+        console.log('❌ Files missing signed_url:', data.files.filter((f: File) => !f.signed_url).map((f: File) => f.name));
         setFiles(data.files);
       } else {
         console.error('Error fetching files:', data.message);
@@ -504,11 +524,13 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
 
     // For assistant messages, look for PDF references
     console.log('🔍 Processing assistant message for PDF references...');
+    console.log('📄 Full message content:', JSON.stringify(content));
     
     const references = detectPageReferences(content);
     
     // Enhanced debug logging
     console.log('🎯 Detected PDF references:', references.length > 0 ? references : 'None found');
+    console.log('📊 Reference count:', references.length);
     
     if (references.length === 0) {
       console.log('❌ No PDF references detected, rendering normally');
@@ -537,7 +559,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       const ref = references[i];
       console.log(`🔗 Processing reference ${i + 1}:`, ref);
       
-      const matchingFile = findMatchingPDFFile(ref, files);
+      const matchingFile = findMatchingPDFFile(ref, files, referencedFiles);
       console.log(`📋 Matching file for reference:`, matchingFile?.name || 'None found');
       
       if (matchingFile) {
