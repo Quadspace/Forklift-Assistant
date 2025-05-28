@@ -11,6 +11,7 @@ import { detectPageReferences, findMatchingPDFFile } from './utils/pdfReferences
 import { processPdfUrl } from './utils/pdfUtils';
 import dynamic from 'next/dynamic';
 import EnhancedPDFPreviewModal from './components/EnhancedPDFPreviewModal';
+import PromptSuggestions from './components/PromptSuggestions';
 
 interface HomeProps {
   initialShowAssistantFiles: boolean;
@@ -176,6 +177,134 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       
     }
   }
+
+  const handlePromptSelect = (prompt: string) => {
+    setInput(prompt);
+    
+    // Auto-submit the prompt after a short delay for better UX
+    setTimeout(() => {
+      const newUserMessage: Message = {
+        id: uuidv4(), 
+        role: 'user',
+        content: prompt,
+        timestamp: new Date().toISOString() 
+      };
+
+      setMessages(prevMessages => [...prevMessages, newUserMessage]);
+      setInput('');
+      setIsStreaming(true);
+      
+      // Use the existing chat logic
+      handleChatWithMessage(newUserMessage);
+    }, 100);
+  };
+
+  const handleChatWithMessage = async (userMessage: Message) => {
+    // Set a global timeout to force reset streaming state after 60 seconds maximum
+    const globalTimeout = setTimeout(() => {
+      console.log('Global timeout reached - forcing streaming state reset');
+      setIsStreaming(false);
+    }, 60000); // 60 seconds absolute maximum
+
+    try {
+      const { object } = await chat([userMessage]);
+      let accumulatedContent = '';
+      const newAssistantMessage: Message = {
+        id: uuidv4(),
+        role: 'assistant',
+        content: '',
+        timestamp: new Date().toISOString(),
+        references: []
+      };
+      
+      setMessages(prevMessages => [...prevMessages, newAssistantMessage]);
+
+      // Use the existing streaming logic from handleChat
+      let streamTimeout: NodeJS.Timeout | null = null;
+      let activityTimeout: NodeJS.Timeout | null = null;
+      let chunkCount = 0;
+      
+      const MAX_IDLE_TIME = 15000;
+      
+      const setStreamSafetyTimeout = () => {
+        if (streamTimeout) clearTimeout(streamTimeout);
+        streamTimeout = setTimeout(() => {
+          console.log('Stream timed out - no chunks received for 15 seconds');
+          setIsStreaming(false);
+        }, MAX_IDLE_TIME);
+      };
+
+      const setActivityTimeout = () => {
+        if (activityTimeout) clearTimeout(activityTimeout);
+        if (chunkCount > 0) {
+          activityTimeout = setTimeout(() => {
+            console.log('Activity stopped after receiving chunks - considering stream complete');
+            setIsStreaming(false);
+          }, 8000);
+        }
+      };
+
+      setStreamSafetyTimeout();
+
+      try {
+        for await (const chunk of readStreamableValue(object)) {
+          try {
+            setStreamSafetyTimeout();
+            setActivityTimeout();
+            chunkCount++;
+
+            if (typeof chunk !== 'string') {
+              console.debug('Received non-string chunk, skipping', typeof chunk);
+              continue;
+            }
+
+            const data = JSON.parse(chunk);
+            if (data && Array.isArray(data.choices) && data.choices.length === 0) {
+              console.debug('Stream finished: Received empty choices array');
+              setIsStreaming(false);
+              break;
+            } else if (data?.choices[0]?.finish_reason) {
+              console.debug('Stream finished by assistant', data.choices[0].finish_reason);
+              setIsStreaming(false);
+              break;
+            }
+            
+            const content = data.choices[0]?.delta?.content;
+            
+            if (content) {
+              accumulatedContent += content;
+              
+              setMessages(prevMessages => {
+                const updatedMessages = [...prevMessages];
+                const lastMessage = updatedMessages[updatedMessages.length - 1];
+                lastMessage.content = accumulatedContent;
+                return updatedMessages;
+              });
+            }
+          } catch (error) {
+            console.error('Error parsing chunk', error instanceof Error ? error.message : String(error));
+          }
+        }
+      } catch (streamError) {
+        console.error('Stream processing error:', streamError);
+        setIsStreaming(false);
+      } finally {
+        if (streamTimeout) clearTimeout(streamTimeout);
+        if (activityTimeout) clearTimeout(activityTimeout);
+        setIsStreaming(false);
+      }
+
+      const extractedReferences = extractReferences(accumulatedContent);
+      setReferencedFiles(extractedReferences);
+
+    } catch (error) {
+      console.error('Error in chat:', error);
+      setError('An error occurred while chatting.');
+    } finally {
+      clearTimeout(globalTimeout);
+      setIsStreaming(false);
+    }
+  };
 
   const handleChat = async () => {
     if (!input.trim()) return;
@@ -612,6 +741,15 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                   </div>
                 ))}
               </div>
+              
+              {/* Prompt Suggestions */}
+              <PromptSuggestions 
+                messages={messages}
+                files={files}
+                onPromptSelect={handlePromptSelect}
+                isStreaming={isStreaming}
+              />
+              
               <form onSubmit={(e) => { e.preventDefault(); handleChat(); }} className="flex mb-4">
                 <input
                   type="text"
