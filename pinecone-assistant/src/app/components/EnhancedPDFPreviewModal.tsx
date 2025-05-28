@@ -7,10 +7,43 @@ import dynamic from 'next/dynamic';
 const PDFDocument = dynamic(() => import('react-pdf').then(mod => ({ default: mod.Document })), { ssr: false });
 const PDFPage = dynamic(() => import('react-pdf').then(mod => ({ default: mod.Page })), { ssr: false });
 
-// Set the workerSrc for PDF.js - do this in a useEffect to avoid SSR issues
+// Set the workerSrc for PDF.js with better error handling
 import { pdfjs } from 'react-pdf';
+
+// Configure PDF.js worker with fallback options
 if (typeof window !== 'undefined') {
-  pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+  // Try multiple CDN sources for better reliability
+  const workerSources = [
+    `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`,
+    `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`,
+    `//cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`
+  ];
+  
+  // Use the first available worker source
+  pdfjs.GlobalWorkerOptions.workerSrc = workerSources[0];
+  
+  // Add error handling for worker loading
+  const originalWorkerSrc = pdfjs.GlobalWorkerOptions.workerSrc;
+  
+  // Test worker availability and fallback if needed
+  const testWorker = () => {
+    try {
+      const worker = new Worker(pdfjs.GlobalWorkerOptions.workerSrc);
+      worker.terminate();
+      console.log('PDF.js worker loaded successfully from:', pdfjs.GlobalWorkerOptions.workerSrc);
+    } catch (error) {
+      console.warn('PDF.js worker failed to load from:', pdfjs.GlobalWorkerOptions.workerSrc);
+      // Try next source
+      const currentIndex = workerSources.indexOf(pdfjs.GlobalWorkerOptions.workerSrc);
+      if (currentIndex < workerSources.length - 1) {
+        pdfjs.GlobalWorkerOptions.workerSrc = workerSources[currentIndex + 1];
+        console.log('Trying alternative PDF.js worker source:', pdfjs.GlobalWorkerOptions.workerSrc);
+      }
+    }
+  };
+  
+  // Test worker on component load
+  setTimeout(testWorker, 100);
 }
 
 interface DocumentChunk {

@@ -16,6 +16,18 @@ export const PAGE_REFERENCE_PATTERNS = [
       };
     }
   },
+  // Matches direct PDF filename references like "WP2000S.pdf", "manual.pdf", etc.
+  {
+    regex: /([A-Za-z0-9_\-\s]+\.pdf)/gi,
+    extractPages: (match: RegExpExecArray) => {
+      return {
+        startPage: 1,
+        endPage: 1,
+        fullMatch: match[0],
+        documentRef: match[1].trim()
+      };
+    }
+  },
   // Matches WP document numbers with page references
   {
     regex: /(WP\s+\d+)(?:.*?)(?:p\.?\s*(\d+)(?:\s*-\s*(\d+))?)/gi,
@@ -171,6 +183,31 @@ export function findMatchingPDFFile(reference: PageReference, files: any[]) {
   if (reference.documentRef) {
     const docRef = reference.documentRef.toLowerCase();
     console.log(`Trying to match document reference: "${docRef}"`);
+    
+    // For direct PDF filename references (like "WP2000S.pdf")
+    if (docRef.endsWith('.pdf')) {
+      const exactMatch = files.find(file => 
+        file.name.toLowerCase() === docRef ||
+        file.name.toLowerCase().includes(docRef.replace('.pdf', ''))
+      );
+      
+      if (exactMatch) {
+        console.log(`Found exact PDF filename match: ${exactMatch.name}`);
+        return exactMatch;
+      }
+      
+      // Try partial matching for PDF filenames
+      const partialMatch = files.find(file => {
+        const fileName = file.name.toLowerCase();
+        const refName = docRef.replace('.pdf', '');
+        return fileName.includes(refName) || refName.includes(fileName.replace('.pdf', ''));
+      });
+      
+      if (partialMatch) {
+        console.log(`Found partial PDF filename match: ${partialMatch.name}`);
+        return partialMatch;
+      }
+    }
     
     // For numbered references like [1, pp.22-31], try to match with the first file
     if (docRef.startsWith('reference ')) {

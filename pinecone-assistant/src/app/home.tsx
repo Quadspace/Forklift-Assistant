@@ -306,45 +306,30 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
   };
 
   const handleOpenPdfModal = (pdfUrl: string, fileName: string, startPage: number, endPage?: number, searchText?: string) => {
-    console.log('Opening PDF modal with params:', { pdfUrl, fileName, startPage, endPage, searchText });
+    console.log('🎬 handleOpenPdfModal called with:', {
+      pdfUrl: pdfUrl ? `${pdfUrl.substring(0, 50)}...` : 'No URL',
+      fileName,
+      startPage,
+      endPage,
+      searchText
+    });
     
-    // Ensure we have valid parameters
     if (!pdfUrl) {
-      console.error('Cannot open PDF modal: Missing PDF URL');
+      console.error('❌ Cannot open PDF modal: No PDF URL provided');
       return;
     }
     
-    if (!fileName) {
-      console.error('Cannot open PDF modal: Missing file name');
-      return;
-    }
-    
-    // Validate start page
-    const validStartPage = Number.isInteger(startPage) && startPage > 0 ? startPage : 1;
-    
-    // Validate end page
-    const validEndPage = endPage && Number.isInteger(endPage) && endPage >= validStartPage 
-      ? endPage 
-      : undefined;
-    
-    // Set state to open modal
+    console.log('✅ Setting PDF modal state...');
     setPdfModalState({
       isOpen: true,
       pdfUrl,
       fileName,
-      startPage: validStartPage,
-      endPage: validEndPage,
+      startPage,
+      endPage,
       searchText
     });
     
-    console.log('PDF modal state set to:', {
-      isOpen: true,
-      pdfUrl,
-      fileName,
-      startPage: validStartPage,
-      endPage: validEndPage,
-      searchText
-    });
+    console.log('🎯 PDF modal state updated, modal should open');
   };
 
   const handleClosePdfModal = () => {
@@ -370,13 +355,18 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     }
 
     // For assistant messages, look for PDF references
+    console.log('🔍 Processing assistant message for PDF references...');
+    console.log('📄 Message content:', content);
+    console.log('📁 Available files:', files.map(f => ({ id: f.id, name: f.name, hasSignedUrl: !!f.signed_url })));
+    
     const references = detectPageReferences(content);
     
     // Enhanced debug logging
-    console.log('Detected PDF references:', references, 'in content:', content);
-    console.log('Available files for matching:', files.map(f => ({ id: f.id, name: f.name })));
+    console.log('🎯 Detected PDF references:', references);
+    console.log('📊 Reference count:', references.length);
     
     if (references.length === 0) {
+      console.log('❌ No PDF references detected, rendering normally');
       // If no references, render normally
       return (
         <ReactMarkdown
@@ -393,27 +383,36 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       );
     }
 
+    console.log('✅ Found PDF references, processing message...');
+    
     // If we have references, process the message
     let processedContent = content;
     // Process in reverse order to not affect indices
     for (let i = references.length - 1; i >= 0; i--) {
       const ref = references[i];
+      console.log(`🔗 Processing reference ${i + 1}:`, ref);
+      
       const matchingFile = findMatchingPDFFile(ref, files);
+      console.log(`📋 Matching file for reference:`, matchingFile?.name || 'None found');
       
       if (matchingFile) {
         const beforeRef = processedContent.substring(0, ref.matchIndex);
         const afterRef = processedContent.substring(ref.matchIndex + ref.fullMatch.length);
         const pdfUrl = matchingFile.signed_url; 
         if (!pdfUrl) {
-          console.error("Error: matchingFile.signed_url is missing for file:", matchingFile.name);
+          console.error("❌ Error: matchingFile.signed_url is missing for file:", matchingFile.name);
         } else {
           const fileNameOnly = matchingFile.name.split(/[\\/]/).pop() || matchingFile.name;
           const displayText = `PDF: ${fileNameOnly} (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
           const pdfLink = `[${displayText}](#pdf-preview?url=${encodeURIComponent(pdfUrl)}&file=${encodeURIComponent(fileNameOnly)}&start=${ref.startPage}&end=${ref.endPage || ref.startPage})`;
           processedContent = `${beforeRef}${pdfLink}${afterRef}`;
+          console.log(`✅ Created PDF link for ${fileNameOnly}:`, pdfLink);
         }
+      } else {
+        console.log(`❌ No matching file found for reference:`, ref);
       }
     }
+    
     // Also, scan the content for any brackets that might be citation references but weren't detected
     const bracketCitationRegex = /\[(\d+)\]/g;
     let match;
@@ -428,7 +427,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           if (matchingFile) {
             const pdfUrl = matchingFile.signed_url;
             if (!pdfUrl) {
-              console.error("Error: matchingFile.signed_url is missing for file (bracket citation):", matchingFile.name);
+              console.error("❌ Error: matchingFile.signed_url is missing for file (bracket citation):", matchingFile.name);
             } else {
               const beforeRef = processedContent.substring(0, matchIndex);
               const afterRef = processedContent.substring(matchIndex + fullMatch.length);
@@ -437,11 +436,15 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
               const pdfLink = `[${displayText}](#pdf-preview?url=${encodeURIComponent(pdfUrl)}&file=${encodeURIComponent(fileNameOnly)}&start=1)`;
               processedContent = `${beforeRef}${pdfLink}${afterRef}`;
               bracketCitationRegex.lastIndex = matchIndex + pdfLink.length;
+              console.log(`✅ Created bracket citation link for ${fileNameOnly}`);
             }
           }
         }
       }
     }
+    
+    console.log('📝 Final processed content:', processedContent);
+    
     return (
       <ReactMarkdown
         components={{
@@ -466,11 +469,15 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                 .replace(/^\[.*\]\s*/, '')
                 .trim();
               const displayText = refText || `PDF: ${fileNameForModal} (p. ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})`;
+              
+              console.log('🖱️ PDF link clicked:', { fileNameForModal, startPage, endPage, searchText });
+              
               return (
                 <a 
                   href="#"
                   onClick={(e) => {
                     e.preventDefault();
+                    console.log('🚀 Opening PDF modal:', { pdfUrlFromLink, fileNameForModal, startPage, endPage, searchText });
                     handleOpenPdfModal(
                       pdfUrlFromLink, 
                       fileNameForModal, 
