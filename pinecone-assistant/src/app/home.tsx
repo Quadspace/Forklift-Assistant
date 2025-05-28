@@ -525,6 +525,12 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     // For assistant messages, look for PDF references
     console.log('🔍 Processing assistant message for PDF references...');
     console.log('📄 Full message content:', JSON.stringify(content));
+    console.log('🗂️ Current referencedFiles state:', referencedFiles);
+    console.log('📋 referencedFiles count:', referencedFiles.length);
+    
+    // Extract references directly from the current content
+    const currentReferences = extractReferences(content);
+    console.log('🔗 References extracted from current content:', currentReferences);
     
     const references = detectPageReferences(content);
     
@@ -559,7 +565,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       const ref = references[i];
       console.log(`🔗 Processing reference ${i + 1}:`, ref);
       
-      const matchingFile = findMatchingPDFFile(ref, files, referencedFiles);
+      const matchingFile = findMatchingPDFFile(ref, files, currentReferences);
       console.log(`📋 Matching file for reference:`, matchingFile?.name || 'None found');
       
       if (matchingFile) {
