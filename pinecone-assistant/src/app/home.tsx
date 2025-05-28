@@ -248,14 +248,20 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
             setActivityTimeout();
             chunkCount++;
 
+            // Ensure chunk is a string before parsing
+            if (typeof chunk !== 'string') {
+              console.debug('Received non-string chunk, skipping', typeof chunk);
+              continue;
+            }
+
             const data = JSON.parse(chunk);
             // Check for empty choices array first as it might signify stream completion
             if (data && Array.isArray(data.choices) && data.choices.length === 0) {
-              console.log('Stream finished: Received empty choices array.');
+              console.debug('Stream finished: Received empty choices array');
               setIsStreaming(false);
               break; // Exit the loop when done
             } else if (data?.choices[0]?.finish_reason) {
-              console.log('Stream finished by assistant with finish_reason:', data.choices[0].finish_reason);
+              console.debug('Stream finished by assistant', data.choices[0].finish_reason);
               setIsStreaming(false);
               break; // Exit the loop when done
             }
@@ -273,7 +279,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
               });
             }
           } catch (error) {
-            console.error('Error parsing chunk:', error);
+            console.error('Error parsing chunk', error instanceof Error ? error.message : String(error));
           }
         }
       } catch (streamError) {
