@@ -1,6 +1,6 @@
-import { PageReference, detectPageReferences, findMatchingPDFFile } from './pdfReferences';
+import { PDFReference, detectPageReferences, findMatchingPDFFile } from './pdfReferences';
 
-export interface EnhancedPageReference extends PageReference {
+export interface EnhancedPageReference extends PDFReference {
   fileName?: string;
   fileId?: string;
   confidence: number;
@@ -46,14 +46,14 @@ export function detectEnhancedPageReferences(text: string, files: any[]): Enhanc
  * @returns Confidence score between 0 and 1
  */
 function calculateReferenceConfidence(
-  reference: PageReference, 
+  reference: PDFReference, 
   matchingFile: any, 
   originalText: string
 ): number {
   let confidence = 0.5; // Base confidence
   
   // Boost confidence if we have a document reference
-  if (reference.documentRef) {
+  if (reference.documentNumber) {
     confidence += 0.2;
   }
   
@@ -188,9 +188,9 @@ function extractSearchText(
   const searchTerms = new Set<string>();
   
   relevantRefs.forEach(ref => {
-    if (ref.documentRef) {
-      // Extract meaningful parts from document reference
-      const cleanRef = ref.documentRef
+    if (ref.searchText) {
+      // Extract meaningful parts from search text
+      const cleanRef = ref.searchText
         .replace(/^Reference\s+\d+/i, '')
         .replace(/^WP\s+\d+/i, '')
         .trim();

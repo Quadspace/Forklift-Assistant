@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { detectPageReferences, PageReference, findMatchingPDFFile } from '../utils/pdfReferences';
+import { detectPageReferences, PDFReference, findMatchingPDFFile } from '../utils/pdfReferences';
 import ClickablePageReference from './ClickablePageReference';
 import PDFPreviewModal from './PDFPreviewModal';
 import { File } from '../types';
