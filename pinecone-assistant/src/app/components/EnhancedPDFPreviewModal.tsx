@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
+import { processPdfUrl, ensurePdfUrlWorks } from '../utils/pdfUtils';
 
 // Dynamically import react-pdf components with no SSR
 const PDFDocument = dynamic(() => import('react-pdf').then(mod => ({ default: mod.Document })), { ssr: false });
@@ -85,7 +86,8 @@ export default function EnhancedPDFPreviewModal({
   const [chunksLoading, setChunksLoading] = useState<boolean>(false);
   const [chunksError, setChunksError] = useState<string | null>(null);
   const [showFullDocument, setShowFullDocument] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'preview' | 'chunks'>('preview');
+  const [activeTab, setActiveTab] = useState<'preview' | 'chunks' | 'debug'>('preview');
+  const [processedPdfUrl, setProcessedPdfUrl] = useState<string>('');
   const pageCanvasRef = useRef<HTMLDivElement>(null);
 
   // Log props when the component receives them
@@ -99,6 +101,37 @@ export default function EnhancedPDFPreviewModal({
       searchText
     });
   }, [isOpen, pdfUrl, fileName, startPage, endPage, searchText]);
+
+  // Process PDF URL when it changes
+  useEffect(() => {
+    const processPdfUrlAsync = async () => {
+      if (!pdfUrl) {
+        setProcessedPdfUrl('');
+        return;
+      }
+
+      console.log('Processing PDF URL:', pdfUrl);
+      
+      try {
+        // First try to process the URL
+        const processed = processPdfUrl(pdfUrl);
+        console.log('Initial processed URL:', processed);
+        
+        // Then ensure it works (handle CORS if needed)
+        const workingUrl = await ensurePdfUrlWorks(processed);
+        console.log('Final working URL:', workingUrl ? 'URL ready' : 'No URL');
+        
+        setProcessedPdfUrl(workingUrl);
+      } catch (error) {
+        console.error('Error processing PDF URL:', error);
+        setProcessedPdfUrl(pdfUrl); // Fallback to original URL
+      }
+    };
+
+    if (isOpen && pdfUrl) {
+      processPdfUrlAsync();
+    }
+  }, [isOpen, pdfUrl]);
 
   useEffect(() => {
     // Reset state when modal opens or PDF changes
@@ -168,7 +201,29 @@ export default function EnhancedPDFPreviewModal({
 
   function onDocumentLoadError(err: Error) {
     console.error('Error loading PDF:', err);
-    setError('Failed to load PDF document. Please try again later.');
+    console.error('PDF URL that failed:', processedPdfUrl);
+    console.error('Original PDF URL:', pdfUrl);
+    
+    // Provide more specific error messages
+    let errorMessage = 'Failed to load PDF document.';
+    
+    if (err.message.includes('CORS')) {
+      errorMessage = 'PDF blocked by CORS policy. Trying alternative loading method...';
+      // Try to reload with proxy
+      if (!processedPdfUrl.includes('/api/pdf-proxy')) {
+        console.log('Attempting to load PDF through proxy...');
+        setProcessedPdfUrl(`/api/pdf-proxy?url=${encodeURIComponent(pdfUrl)}`);
+        return; // Don't set error yet, let proxy attempt work
+      }
+    } else if (err.message.includes('404')) {
+      errorMessage = 'PDF file not found. The document may have been moved or deleted.';
+    } else if (err.message.includes('403')) {
+      errorMessage = 'Access denied to PDF file. The signed URL may have expired.';
+    } else if (err.message.includes('network')) {
+      errorMessage = 'Network error loading PDF. Please check your connection and try again.';
+    }
+    
+    setError(errorMessage);
     setLoading(false);
   }
 
@@ -329,6 +384,18 @@ export default function EnhancedPDFPreviewModal({
           >
             Relevant Content ({documentChunks.length})
           </button>
+          {process.env.NODE_ENV === 'development' && (
+            <button
+              onClick={() => setActiveTab('debug' as any)}
+              className={`px-4 py-2 font-medium text-sm ${
+                activeTab === 'debug'
+                  ? 'text-blue-600 border-b-2 border-blue-600 dark:text-blue-400 dark:border-blue-400'
+                  : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+              }`}
+            >
+              Debug
+            </button>
+          )}
         </div>
 
         {/* Content Area */}
@@ -345,16 +412,28 @@ export default function EnhancedPDFPreviewModal({
               {error && (
                 <div className="text-red-500 text-center p-4">
                   {error}
+                  <div className="mt-4">
+                    <button
+                      onClick={() => {
+                        setError(null);
+                        setLoading(true);
+                        setProcessedPdfUrl(pdfUrl); // Retry with original URL
+                      }}
+                      className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                    >
+                      Retry
+                    </button>
+                  </div>
                 </div>
               )}
 
               {!error && (
                 <div className="relative">
-                  {pdfUrl && (
+                  {processedPdfUrl && (
                     <div>
                       {/* @ts-ignore - Ignoring type issues with dynamic imports */}
                       <PDFDocument
-                        file={pdfUrl}
+                        file={processedPdfUrl}
                         onLoadSuccess={onDocumentLoadSuccess}
                         onLoadError={onDocumentLoadError}
                         loading={<div className="text-gray-500">Loading PDF...</div>}
@@ -405,7 +484,7 @@ export default function EnhancedPDFPreviewModal({
                 </div>
               )}
             </div>
-          ) : (
+          ) : activeTab === 'chunks' ? (
             /* Document Chunks Tab */
             <div className="h-full overflow-auto p-4">
               {chunksLoading && (
@@ -463,6 +542,86 @@ export default function EnhancedPDFPreviewModal({
                   ))}
                 </div>
               )}
+            </div>
+          ) : (
+            /* Debug Tab */
+            <div className="h-full overflow-auto p-4">
+              <div className="space-y-4 text-sm">
+                <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">PDF Loading Debug Info</h3>
+                
+                <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                  <h4 className="font-medium text-gray-800 dark:text-gray-200 mb-2">URLs</h4>
+                  <div className="space-y-2 text-xs">
+                    <div>
+                      <span className="font-medium">Original URL:</span>
+                      <div className="break-all text-gray-600 dark:text-gray-400 mt-1">
+                        {pdfUrl || 'Not provided'}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="font-medium">Processed URL:</span>
+                      <div className="break-all text-gray-600 dark:text-gray-400 mt-1">
+                        {processedPdfUrl || 'Not processed yet'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                  <h4 className="font-medium text-gray-800 dark:text-gray-200 mb-2">Modal State</h4>
+                  <div className="space-y-1 text-xs">
+                    <div><span className="font-medium">Loading:</span> {loading ? 'Yes' : 'No'}</div>
+                    <div><span className="font-medium">Error:</span> {error || 'None'}</div>
+                    <div><span className="font-medium">Current Page:</span> {currentPage}</div>
+                    <div><span className="font-medium">Total Pages:</span> {numPages || 'Unknown'}</div>
+                    <div><span className="font-medium">File Name:</span> {fileName}</div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                  <h4 className="font-medium text-gray-800 dark:text-gray-200 mb-2">Actions</h4>
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => {
+                        console.log('🔄 Retrying with original URL...');
+                        setError(null);
+                        setLoading(true);
+                        setProcessedPdfUrl(pdfUrl);
+                      }}
+                      className="bg-blue-500 text-white px-3 py-1 rounded text-xs hover:bg-blue-600"
+                    >
+                      Retry with Original URL
+                    </button>
+                    <button
+                      onClick={() => {
+                        console.log('🔄 Retrying with proxy...');
+                        setError(null);
+                        setLoading(true);
+                        setProcessedPdfUrl(`/api/pdf-proxy?url=${encodeURIComponent(pdfUrl)}`);
+                      }}
+                      className="bg-green-500 text-white px-3 py-1 rounded text-xs hover:bg-green-600 ml-2"
+                    >
+                      Try Proxy
+                    </button>
+                    <button
+                      onClick={() => {
+                        console.log('📋 PDF Debug Info:', {
+                          pdfUrl,
+                          processedPdfUrl,
+                          fileName,
+                          loading,
+                          error,
+                          currentPage,
+                          numPages
+                        });
+                      }}
+                      className="bg-gray-500 text-white px-3 py-1 rounded text-xs hover:bg-gray-600 ml-2"
+                    >
+                      Log Debug Info
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>

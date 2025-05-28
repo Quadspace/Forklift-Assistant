@@ -8,6 +8,7 @@ import AssistantFiles from './components/AssistantFiles';
 import { File, Reference, Message } from './types';
 import { v4 as uuidv4 } from 'uuid';
 import { detectPageReferences, findMatchingPDFFile } from './utils/pdfReferences';
+import { processPdfUrl } from './utils/pdfUtils';
 import dynamic from 'next/dynamic';
 import EnhancedPDFPreviewModal from './components/EnhancedPDFPreviewModal';
 
@@ -305,7 +306,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     }
   };
 
-  const handleOpenPdfModal = (pdfUrl: string, fileName: string, startPage: number, endPage?: number, searchText?: string) => {
+  const handleOpenPdfModal = async (pdfUrl: string, fileName: string, startPage: number, endPage?: number, searchText?: string) => {
     console.log('🎬 handleOpenPdfModal called with:', {
       pdfUrl: pdfUrl ? `${pdfUrl.substring(0, 50)}...` : 'No URL',
       fileName,
@@ -319,17 +320,35 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       return;
     }
     
-    console.log('✅ Setting PDF modal state...');
-    setPdfModalState({
-      isOpen: true,
-      pdfUrl,
-      fileName,
-      startPage,
-      endPage,
-      searchText
-    });
+    console.log('✅ Processing PDF URL...');
     
-    console.log('🎯 PDF modal state updated, modal should open');
+    try {
+      // Process the PDF URL to ensure it works with the viewer
+      const processedUrl = processPdfUrl(pdfUrl);
+      console.log('📄 PDF URL processed successfully');
+      
+      setPdfModalState({
+        isOpen: true,
+        pdfUrl: processedUrl,
+        fileName,
+        startPage,
+        endPage,
+        searchText
+      });
+      
+      console.log('🎯 PDF modal state updated, modal should open');
+    } catch (error) {
+      console.error('❌ Error processing PDF URL:', error);
+      // Fallback to original URL
+      setPdfModalState({
+        isOpen: true,
+        pdfUrl,
+        fileName,
+        startPage,
+        endPage,
+        searchText
+      });
+    }
   };
 
   const handleClosePdfModal = () => {
@@ -624,7 +643,11 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
             </div>
             {showAssistantFiles && (
               <div className="w-full">
-                <AssistantFiles files={files} referencedFiles={referencedFiles} />
+                <AssistantFiles 
+                  files={files} 
+                  referencedFiles={referencedFiles} 
+                  onOpenPdfModal={handleOpenPdfModal}
+                />
               </div>
             )}
           </div>
