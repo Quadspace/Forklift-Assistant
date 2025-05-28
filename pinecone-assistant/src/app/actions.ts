@@ -263,7 +263,7 @@ export async function chat(messages: Message[]) {
     const url = `${process.env.PINECONE_ASSISTANT_URL}/assistant/chat/${process.env.PINECONE_ASSISTANT_NAME}/chat/completions`;
     logger.debug('Connecting to Pinecone Assistants API', { url });
 
-    // Use connection health wrapper for EventSource creation
+    // Production-optimized EventSource creation with longer timeouts for cloud deployment
     const eventSource = await withConnectionHealth(async () => {
       return new Promise<EventSource>((resolve, reject) => {
         const es = new EventSource(url, {
@@ -275,33 +275,65 @@ export async function chat(messages: Message[]) {
           headers: {
             Authorization: `Bearer ${process.env.PINECONE_API_KEY}`,
             'X-Project-Id': process.env.PINECONE_ASSISTANT_ID!,
+            'User-Agent': 'Forklift-Assistant/1.0',
+            'Accept': 'text/event-stream',
+            'Cache-Control': 'no-cache',
           },
           disableRetry: true,
+          // Add connection options for better stability
+          withCredentials: false,
         });
 
-        // Set up connection timeout
+        // Extended connection timeout for cloud deployment (30 seconds)
         const connectionTimeout = setTimeout(() => {
+          logger.warn('EventSource connection timeout - closing connection');
           es.close();
           reject(new Error('EventSource connection timeout'));
-        }, 15000); // 15 seconds for connection
+        }, 30000); // 30 seconds for initial connection
+
+        // Track connection attempts
+        let connectionAttempted = false;
 
         es.onopen = () => {
+          connectionAttempted = true;
           clearTimeout(connectionTimeout);
-          logger.debug('EventSource connection opened successfully');
+          logger.info('EventSource connection opened successfully', { 
+            url: url.replace(process.env.PINECONE_API_KEY || '', '[REDACTED]') 
+          });
           resolve(es);
         };
 
         es.onerror = (error: any) => {
           clearTimeout(connectionTimeout);
+          
+          // Log detailed error information
+          logger.error('EventSource connection error', { 
+            readyState: es.readyState,
+            status: error?.status,
+            message: error?.message,
+            type: error?.type,
+            connectionAttempted,
+            url: url.replace(process.env.PINECONE_API_KEY || '', '[REDACTED]')
+          });
+
           es.close();
-          reject(new Error(`EventSource connection failed: ${error?.message || 'Unknown error'}`));
+          
+          // Provide more specific error messages
+          let errorMessage = 'EventSource connection failed';
+          if (!connectionAttempted) {
+            errorMessage = 'Failed to establish initial connection to Pinecone Assistant API';
+          } else if (error?.status) {
+            errorMessage = `Connection failed with status ${error.status}`;
+          }
+          
+          reject(new Error(errorMessage));
         };
       });
-    }, 20000); // 20 second total timeout
+    }, 45000); // 45 second total timeout for connection establishment
 
     streamManager.setEventSource(eventSource);
 
-    // Set up activity timeout
+    // Extended activity timeout for production (40 seconds)
     let activityTimeout: NodeJS.Timeout | null = null;
     
     const resetActivityTimeout = () => {
@@ -310,11 +342,11 @@ export async function chat(messages: Message[]) {
       }
       
       activityTimeout = setTimeout(() => {
-        logger.warn('Activity timeout reached');
+        logger.warn('Activity timeout reached - no data received for 40 seconds');
         if (streamManager && streamManager.isActive()) {
           streamManager.safeComplete();
         }
-      }, 25000); // 25 seconds of inactivity
+      }, 40000); // 40 seconds of inactivity
 
       if (streamManager) {
         streamManager.addTimeout(activityTimeout);
@@ -323,17 +355,25 @@ export async function chat(messages: Message[]) {
 
     resetActivityTimeout();
 
-    // Handle incoming messages
+    // Handle incoming messages with improved error handling
     eventSource.onmessage = (event: MessageEvent) => {
       if (!streamManager || !streamManager.isActive()) {
         logger.debug('Received message for inactive stream, ignoring');
         return;
       }
 
-      logger.debug('Received event data chunk');
+      logger.debug('Received event data chunk', { 
+        dataLength: event.data?.length || 0 
+      });
       resetActivityTimeout();
       
       try {
+        // Handle empty or whitespace-only data
+        if (!event.data || event.data.trim() === '') {
+          logger.debug('Received empty event data, skipping');
+          return;
+        }
+
         const message = JSON.parse(event.data);
         
         // Handle empty choices array (stream completion)
@@ -367,7 +407,8 @@ export async function chat(messages: Message[]) {
         else {
           logger.debug('Received message with unexpected structure', { 
             hasChoices: !!message?.choices,
-            messageKeys: Object.keys(message || {})
+            messageKeys: Object.keys(message || {}),
+            dataPreview: event.data?.substring(0, 100)
           });
           
           // Check for empty object (possible completion signal)
@@ -381,26 +422,37 @@ export async function chat(messages: Message[]) {
       } catch (parseError) {
         logger.error('Error parsing event data', { 
           error: parseError instanceof Error ? parseError.message : String(parseError),
-          eventData: event.data?.substring(0, 200) // Log first 200 chars for debugging
+          eventData: event.data?.substring(0, 200), // Log first 200 chars for debugging
+          eventDataType: typeof event.data
         });
         
-        if (streamManager && streamManager.isActive()) {
-          streamManager.safeError('Error processing response data');
-        }
+        // Don't fail the entire stream for parsing errors, just skip this chunk
+        logger.warn('Skipping malformed event data chunk');
       }
     };
 
-    // Handle EventSource errors
+    // Handle EventSource errors during streaming
     eventSource.onerror = (error: any) => {
       logger.error('EventSource error during streaming', { 
         status: error?.status,
         message: error?.message,
         type: error?.type,
-        readyState: eventSource?.readyState
+        readyState: eventSource?.readyState,
+        timestamp: new Date().toISOString()
       });
 
       if (streamManager && streamManager.isActive()) {
-        streamManager.safeError('Connection error occurred - please try again');
+        // Provide user-friendly error message based on error type
+        let userMessage = 'Connection error occurred - please try again';
+        if (error?.status === 401) {
+          userMessage = 'Authentication error - please check your API credentials';
+        } else if (error?.status === 429) {
+          userMessage = 'Rate limit exceeded - please wait a moment and try again';
+        } else if (error?.status >= 500) {
+          userMessage = 'Server error - the service may be temporarily unavailable';
+        }
+        
+        streamManager.safeError(userMessage);
       }
     };
 
@@ -409,7 +461,10 @@ export async function chat(messages: Message[]) {
 
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    logger.error('Unexpected error in chat function', { error: errorMsg });
+    logger.error('Unexpected error in chat function', { 
+      error: errorMsg,
+      stack: error instanceof Error ? error.stack : undefined
+    });
     
     // Record connection failure if it's a connection-related error
     if (errorMsg.includes('timeout') || errorMsg.includes('connection') || errorMsg.includes('network')) {
@@ -417,7 +472,15 @@ export async function chat(messages: Message[]) {
     }
     
     if (streamManager) {
-      streamManager.safeError('An unexpected error occurred - please try again');
+      // Provide specific error message based on error type
+      let userMessage = 'An unexpected error occurred - please try again';
+      if (errorMsg.includes('timeout')) {
+        userMessage = 'Connection timeout - please check your internet connection and try again';
+      } else if (errorMsg.includes('blocked by circuit breaker')) {
+        userMessage = 'Service temporarily unavailable due to connection issues. Please try again in a few minutes.';
+      }
+      
+      streamManager.safeError(userMessage);
     } else {
       // If streamManager wasn't created, create a basic error response
       const stream = createStreamableValue();

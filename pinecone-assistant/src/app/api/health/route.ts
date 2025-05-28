@@ -61,6 +61,17 @@ export async function GET() {
       issues.push(`Missing environment variables: ${missingEnvVars.join(', ')}`);
     }
 
+    // Add detailed connection diagnostics
+    const connectionDiagnostics = {
+      circuit_breaker_active: !connectionHealth.shouldAllowConnection(),
+      consecutive_failures: healthStatus.metrics.consecutiveFailures,
+      success_rate: Math.round((healthStatus.metrics.successfulConnections / Math.max(1, healthStatus.metrics.totalConnections)) * 100),
+      last_attempt: healthStatus.metrics.lastConnectionAttempt ? new Date(healthStatus.metrics.lastConnectionAttempt).toISOString() : null,
+      pinecone_endpoint: process.env.PINECONE_ASSISTANT_URL ? 
+        `${process.env.PINECONE_ASSISTANT_URL}/assistant/chat/${process.env.PINECONE_ASSISTANT_NAME}/chat/completions` : 
+        'Not configured'
+    };
+
     const healthCheckDuration = Date.now() - startTime;
     
     const response = {
@@ -71,6 +82,7 @@ export async function GET() {
       environment: process.env.NODE_ENV || 'unknown',
       checks: {
         connection_health: healthStatus,
+        connection_diagnostics: connectionDiagnostics,
         cache: {
           status: cacheStats.size > 0 ? 'active' : 'empty',
           size: cacheStats.size,
@@ -78,7 +90,8 @@ export async function GET() {
         },
         environment_variables: {
           status: missingEnvVars.length === 0 ? 'ok' : 'missing',
-          missing: missingEnvVars
+          missing: missingEnvVars,
+          configured: Object.keys(envCheck).filter(key => envCheck[key as keyof typeof envCheck])
         },
         performance: {
           avg_response_time: avgResponseTime,
@@ -87,13 +100,19 @@ export async function GET() {
         }
       },
       issues: issues.length > 0 ? issues : undefined,
-      recommendations: healthStatus.recommendations.length > 0 ? healthStatus.recommendations : undefined
+      recommendations: [
+        ...healthStatus.recommendations,
+        ...(connectionDiagnostics.circuit_breaker_active ? ['Circuit breaker is active - use POST /api/health to reset'] : []),
+        ...(connectionDiagnostics.success_rate < 50 ? ['Check Pinecone API connectivity and credentials'] : []),
+        ...(missingEnvVars.length > 0 ? ['Configure missing environment variables'] : [])
+      ].filter(Boolean)
     };
 
     logger.info('Health check completed', { 
       status: serviceStatus, 
       duration: healthCheckDuration,
-      issues: issues.length 
+      issues: issues.length,
+      circuit_breaker_active: connectionDiagnostics.circuit_breaker_active
     });
 
     // Return appropriate HTTP status based on health
@@ -113,6 +132,61 @@ export async function GET() {
       error: 'Health check failed',
       message: error instanceof Error ? error.message : String(error)
     }, { status: 503 });
+  }
+}
+
+// POST endpoint to reset circuit breaker and clear cache
+export async function POST(request: Request) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const { action } = body;
+
+    const results: any = {
+      timestamp: new Date().toISOString(),
+      actions_performed: []
+    };
+
+    // Reset circuit breaker
+    if (action === 'reset_circuit_breaker' || action === 'reset_all') {
+      connectionHealth.resetCircuitBreaker();
+      results.actions_performed.push('circuit_breaker_reset');
+      logger.info('Circuit breaker manually reset via API');
+    }
+
+    // Clear cache
+    if (action === 'clear_cache' || action === 'reset_all') {
+      cache.clear();
+      results.actions_performed.push('cache_cleared');
+      logger.info('Cache manually cleared via API');
+    }
+
+    // Reset connection metrics
+    if (action === 'reset_metrics' || action === 'reset_all') {
+      connectionHealth.resetMetrics();
+      results.actions_performed.push('metrics_reset');
+      logger.info('Connection metrics manually reset via API');
+    }
+
+    if (results.actions_performed.length === 0) {
+      return NextResponse.json({
+        error: 'No valid action specified',
+        available_actions: ['reset_circuit_breaker', 'clear_cache', 'reset_metrics', 'reset_all']
+      }, { status: 400 });
+    }
+
+    results.message = `Successfully performed: ${results.actions_performed.join(', ')}`;
+    
+    return NextResponse.json(results, { status: 200 });
+
+  } catch (error) {
+    logger.error('Health action failed', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+
+    return NextResponse.json({
+      error: 'Action failed',
+      message: error instanceof Error ? error.message : String(error)
+    }, { status: 500 });
   }
 }
 
