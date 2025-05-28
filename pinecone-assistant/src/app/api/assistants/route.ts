@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import { checkAssistantPrerequisites } from '../../utils/assistantUtils';
+import { logger } from '../../utils/logger';
+import { apiClient } from '../../utils/apiClient';
 
 export async function GET() {
+  const endTimer = logger.time('assistants_api_duration');
+  
   const { apiKey, assistantName } = await checkAssistantPrerequisites();
   
   if (!apiKey || !assistantName) {
+    logger.error('Missing required environment variables for assistants API');
     return NextResponse.json({
       status: "error",
       message: "PINECONE_API_KEY and PINECONE_ASSISTANT_NAME are required.",
@@ -13,21 +18,30 @@ export async function GET() {
   }
 
   try {
-    const response = await fetch('https://api.pinecone.io/assistant/assistants', {
-      method: 'GET',
-      headers: {
-        'Api-Key': apiKey,
-      },
-    });
+    const response = await apiClient.request<any>(
+      'https://api.pinecone.io/assistant/assistants',
+      {
+        method: 'GET',
+        headers: {
+          'Api-Key': apiKey,
+        },
+        timeout: 8000,
+        retries: 1,
+        useCache: true,
+        cacheTTL: 15 * 60 * 1000, // Cache for 15 minutes - assistant list doesn't change often
+      }
+    );
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    // List the assistants and check if the aassistant targeted by process.env.PINECONE_ASSISTANT_NAME exists
-    const assistants = await response.json();
+    const assistants = response.data;
     const assistantExists = assistants.assistants.some((assistant: any) => assistant.name === assistantName);
 
+    logger.info(`Assistant check completed`, { 
+      assistantName, 
+      exists: assistantExists,
+      cached: response.cached 
+    });
+
+    endTimer();
     return NextResponse.json({
       status: "success",
       message: `Assistant '${assistantName}' check completed.`,
@@ -36,7 +50,12 @@ export async function GET() {
     }, { status: 200 });
 
   } catch (error) {
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    logger.error('Error checking assistant', { 
+      error: error instanceof Error ? error.message : String(error),
+      assistantName 
+    });
+    
+    endTimer();
     return NextResponse.json({
       status: "error",
       message: `Failed to check assistant: ${error instanceof Error ? error.message : String(error)}`,

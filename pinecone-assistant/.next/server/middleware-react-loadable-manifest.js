@@ -1,1 +1,1 @@
-self.__REACT_LOADABLE_MANIFEST='{"app\\\\components\\\\PDFPreviewModal.tsx -> react-pdf":{"id":618,"files":["static/chunks/618.03dade8902ee368b.js"]}}';
+self.__REACT_LOADABLE_MANIFEST='{"app\\\\components\\\\EnhancedPDFPreviewModal.tsx -> react-pdf":{"id":618,"files":["static/chunks/618.03dade8902ee368b.js"]}}';

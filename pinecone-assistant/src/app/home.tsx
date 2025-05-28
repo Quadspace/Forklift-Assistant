@@ -9,7 +9,7 @@ import { File, Reference, Message } from './types';
 import { v4 as uuidv4 } from 'uuid';
 import { detectPageReferences, findMatchingPDFFile } from './utils/pdfReferences';
 import dynamic from 'next/dynamic';
-import PDFPreviewModal from './components/PDFPreviewModal';
+import EnhancedPDFPreviewModal from './components/EnhancedPDFPreviewModal';
 
 interface HomeProps {
   initialShowAssistantFiles: boolean;
@@ -646,7 +646,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
 
       {/* PDF Preview Modal */}
       {pdfModalState.isOpen && (
-        <PDFPreviewModal 
+        <EnhancedPDFPreviewModal 
           isOpen={pdfModalState.isOpen}
           onClose={handleClosePdfModal}
           pdfUrl={pdfModalState.pdfUrl}

@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import { checkAssistantPrerequisites } from '../../utils/assistantUtils';
+import { logger } from '../../utils/logger';
+import { apiClient } from '../../utils/apiClient';
 
 export async function GET() {
+  const endTimer = logger.time('files_api_duration');
+  
   const { apiKey, assistantName } = await checkAssistantPrerequisites();
   
   if (!apiKey || !assistantName) {
+    logger.error('Missing required environment variables for files API');
     return NextResponse.json({
       status: "error",
       message: "PINECONE_API_KEY and PINECONE_ASSISTANT_NAME are required.",
@@ -13,18 +18,21 @@ export async function GET() {
   }
 
   try {
-    const response = await fetch(`https://prod-1-data.ke.pinecone.io/assistant/files/${assistantName}`, {
-      method: 'GET',
-      headers: {
-        'Api-Key': apiKey,
-      },
-    });
+    const response = await apiClient.request<any>(
+      `https://prod-1-data.ke.pinecone.io/assistant/files/${assistantName}`,
+      {
+        method: 'GET',
+        headers: {
+          'Api-Key': apiKey,
+        },
+        timeout: 8000,
+        retries: 1,
+        useCache: true,
+        cacheTTL: 5 * 60 * 1000,
+      }
+    );
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
+    const data = response.data;
     
     if (!data.files || !Array.isArray(data.files)) {
       throw new Error('Unexpected response format: files is not an array');
@@ -41,6 +49,13 @@ export async function GET() {
       signed_url: file.signed_url
     }));
 
+    logger.info(`Files retrieved successfully`, { 
+      count: fileData.length, 
+      assistantName,
+      cached: response.cached 
+    });
+
+    endTimer();
     return NextResponse.json({
       status: "success",
       message: `Files for assistant '${assistantName}' retrieved successfully.`,
@@ -48,7 +63,12 @@ export async function GET() {
     }, { status: 200 });
 
   } catch (error) {
-    console.error(`Error listing assistant files: ${error instanceof Error ? error.message : String(error)}`);
+    logger.error('Error listing assistant files', { 
+      error: error instanceof Error ? error.message : String(error),
+      assistantName 
+    });
+    
+    endTimer();
     return NextResponse.json({
       status: "error",
       message: `Failed to list assistant files: ${error instanceof Error ? error.message : String(error)}`,
