@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { processPdfUrl, ensurePdfUrlWorks } from '../utils/pdfUtils';
+import { logger } from '../utils/logger';
 
 // Dynamically import react-pdf components with no SSR
 const PDFDocument = dynamic(() => import('react-pdf').then(mod => ({ default: mod.Document })), { ssr: false });
@@ -92,7 +93,7 @@ export default function EnhancedPDFPreviewModal({
 
   // Log props when the component receives them
   useEffect(() => {
-    console.log('EnhancedPDFPreviewModal props received:', {
+    logger.info('EnhancedPDFPreviewModal props received:', {
       isOpen,
       pdfUrl,
       fileName,
@@ -110,20 +111,20 @@ export default function EnhancedPDFPreviewModal({
         return;
       }
 
-      console.log('Processing PDF URL:', pdfUrl);
+      logger.info('Processing PDF URL:', pdfUrl);
       
       try {
         // First try to process the URL
         const processed = processPdfUrl(pdfUrl);
-        console.log('Initial processed URL:', processed);
+        logger.info('Initial processed URL:', processed);
         
         // Then ensure it works (handle CORS if needed)
         const workingUrl = await ensurePdfUrlWorks(processed);
-        console.log('Final working URL:', workingUrl ? 'URL ready' : 'No URL');
+        logger.info('Final working URL:', workingUrl ? 'URL ready' : 'No URL');
         
         setProcessedPdfUrl(workingUrl);
       } catch (error) {
-        console.error('Error processing PDF URL:', error);
+        logger.error('Error processing PDF URL:', error);
         setProcessedPdfUrl(pdfUrl); // Fallback to original URL
       }
     };
@@ -136,7 +137,7 @@ export default function EnhancedPDFPreviewModal({
   useEffect(() => {
     // Reset state when modal opens or PDF changes
     if (isOpen) {
-      console.log(`Modal opened, setting current page to ${startPage || 1}`);
+      logger.info(`Modal opened, setting current page to ${startPage || 1}`);
       setCurrentPage(startPage || 1);
       setError(null);
       setLoading(true);
@@ -180,12 +181,12 @@ export default function EnhancedPDFPreviewModal({
       
       if (data.status === 'success') {
         setDocumentChunks(data.chunks);
-        console.log(`Loaded ${data.chunks.length} document chunks`);
+        logger.info(`Loaded ${data.chunks.length} document chunks`);
       } else {
         setChunksError(data.message || 'Failed to load document chunks');
       }
     } catch (error) {
-      console.error('Error fetching document chunks:', error);
+      logger.error('Error fetching document chunks:', error);
       setChunksError('Failed to fetch document chunks');
     } finally {
       setChunksLoading(false);
@@ -193,16 +194,16 @@ export default function EnhancedPDFPreviewModal({
   };
 
   const onDocumentLoadSuccess = (loadInfo: any) => {
-    console.log('PDF document loaded successfully:', loadInfo);
+    logger.info('PDF document loaded successfully:', loadInfo);
     setNumPages(loadInfo.numPages);
     setPdfDocument(loadInfo._pdfInfo.pdfDocument);
     setLoading(false);
   };
 
   function onDocumentLoadError(err: Error) {
-    console.error('Error loading PDF:', err);
-    console.error('PDF URL that failed:', processedPdfUrl);
-    console.error('Original PDF URL:', pdfUrl);
+    logger.error('Error loading PDF:', err);
+    logger.error('PDF URL that failed:', processedPdfUrl);
+    logger.error('Original PDF URL:', pdfUrl);
     
     // Provide more specific error messages
     let errorMessage = 'Failed to load PDF document.';
@@ -211,7 +212,7 @@ export default function EnhancedPDFPreviewModal({
       errorMessage = 'PDF blocked by CORS policy. Trying alternative loading method...';
       // Try to reload with proxy
       if (!processedPdfUrl.includes('/api/pdf-proxy')) {
-        console.log('Attempting to load PDF through proxy...');
+        logger.info('Attempting to load PDF through proxy...');
         setProcessedPdfUrl(`/api/pdf-proxy?url=${encodeURIComponent(pdfUrl)}`);
         return; // Don't set error yet, let proxy attempt work
       }
@@ -263,11 +264,11 @@ export default function EnhancedPDFPreviewModal({
         const pageTextContent = textContent.items.map((item: any) => item.str).join(' ');
         setPageText(pageTextContent);
 
-        console.log(`Searching for text "${searchText}" in current page text:`, pageTextContent.substring(0, 200) + '...');
+        logger.info(`Searching for text "${searchText}" in current page text:`, pageTextContent.substring(0, 200) + '...');
         
         // Find highlight positions
         if (searchText && pageTextContent.includes(searchText)) {
-          console.log(`Found search text "${searchText}" in page ${currentPage}`);
+          logger.info(`Found search text "${searchText}" in page ${currentPage}`);
           const viewport = page.getViewport({ scale: 1.0 });
           const highlights: any[] = [];
 
@@ -288,17 +289,17 @@ export default function EnhancedPDFPreviewModal({
                 viewport: viewport
               });
               
-              console.log(`Added highlight for "${item.str}" at position:`, rect);
+              logger.info(`Added highlight for "${item.str}" at position:`, rect);
             }
           }
 
           setHighlightAreas(highlights);
-          console.log(`Created ${highlights.length} highlight areas`);
+          logger.info(`Created ${highlights.length} highlight areas`);
         } else {
-          console.log(`Search text "${searchText}" not found in page ${currentPage}`);
+          logger.info(`Search text "${searchText}" not found in page ${currentPage}`);
         }
       } catch (error) {
-        console.error('Error extracting text:', error);
+        logger.error('Error extracting text:', error);
       }
     };
 
@@ -583,7 +584,7 @@ export default function EnhancedPDFPreviewModal({
                   <div className="space-y-2">
                     <button
                       onClick={() => {
-                        console.log('🔄 Retrying with original URL...');
+                        logger.info('🔄 Retrying with original URL...');
                         setError(null);
                         setLoading(true);
                         setProcessedPdfUrl(pdfUrl);
@@ -594,7 +595,7 @@ export default function EnhancedPDFPreviewModal({
                     </button>
                     <button
                       onClick={() => {
-                        console.log('🔄 Retrying with proxy...');
+                        logger.info('🔄 Retrying with proxy...');
                         setError(null);
                         setLoading(true);
                         setProcessedPdfUrl(`/api/pdf-proxy?url=${encodeURIComponent(pdfUrl)}`);
@@ -605,7 +606,7 @@ export default function EnhancedPDFPreviewModal({
                     </button>
                     <button
                       onClick={() => {
-                        console.log('📋 PDF Debug Info:', {
+                        logger.info('📋 PDF Debug Info:', {
                           pdfUrl,
                           processedPdfUrl,
                           fileName,

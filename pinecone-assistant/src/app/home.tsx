@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, FormEvent, useRef, useCallback } from 'react';
+import { useState, useEffect, FormEvent, useRef, useCallback, useMemo } from 'react';
 import { readStreamableValue } from 'ai/rsc';
 import { chat } from './actions';
 import ReactMarkdown from 'react-markdown';
@@ -12,6 +12,15 @@ import { processPdfUrl } from './utils/pdfUtils';
 import dynamic from 'next/dynamic';
 import EnhancedPDFPreviewModal from './components/EnhancedPDFPreviewModal';
 import PromptSuggestions from './components/PromptSuggestions';
+import { logger } from './utils/logger';
+import ErrorBoundary from './components/ErrorBoundary';
+import { 
+  ConnectionLoading, 
+  StreamingIndicator, 
+  FileLoading, 
+  LoadingOverlay,
+  TypingIndicator 
+} from './components/LoadingStates';
 
 interface HomeProps {
   initialShowAssistantFiles: boolean;
@@ -31,6 +40,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [pdfModalState, setPdfModalState] = useState({
@@ -42,90 +52,30 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     searchText: undefined as string | undefined
   });
   
-  // Simplified scroll function that ONLY targets the chat container with ID
-  const scrollToBottom = useCallback(() => {
-    // Clear any existing timeout
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-    }
+  // Enhanced error handling
+  const handleError = useCallback((error: Error, context: string) => {
+    logger.error(`Error in ${context}`, {
+      error: error.message,
+      stack: error.stack,
+      context
+    });
     
-    // Set a new timeout to scroll after a short delay
-    scrollTimeoutRef.current = setTimeout(() => {
-      const chatContainer = document.getElementById('chat-container');
-      if (chatContainer) {
-        // Get the current scroll position
-        const scrollPosition = chatContainer.scrollTop;
-        const scrollHeight = chatContainer.scrollHeight;
-        const clientHeight = chatContainer.clientHeight;
-        
-        // Only auto-scroll if user is already near the bottom
-        // or if this is a new message sequence
-        const isNearBottom = scrollHeight - scrollPosition - clientHeight < 100;
-        
-        if (isNearBottom || messages.length <= 2) {
-          chatContainer.scrollTop = scrollHeight;
-        }
-      }
-    }, 100); // 100ms delay to batch scroll operations
-  }, [messages.length]);
-
-  // Clean up timeout on component unmount
-  useEffect(() => {
-    return () => {
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Add back the effect to scroll when messages change
-  useEffect(() => {
-    // Scroll to bottom when messages change
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
-
-  // Add chat container-specific scroll handling
-  useEffect(() => {
-    const chatContainer = document.getElementById('chat-container');
-    
-    if (chatContainer) {
-      // Event listener for chat container scroll
-      const handleChatScroll = (e: Event) => {
-        // Prevent any potential bubbling to parent elements
-        e.stopPropagation();
-      };
-      
-      // Only attach to the specific chat container
-      chatContainer.addEventListener('scroll', handleChatScroll);
-      
-      return () => {
-        chatContainer.removeEventListener('scroll', handleChatScroll);
-      };
+    // Set user-friendly error message
+    if (error.message.includes('fetch') || error.message.includes('network')) {
+      setError('Connection error. Please check your internet connection and try again.');
+    } else if (error.message.includes('timeout')) {
+      setError('Request timed out. Please try again.');
+    } else {
+      setError('An unexpected error occurred. Please try again.');
     }
   }, []);
 
-  useEffect(() => {
-    // Check for dark mode preference
-    if (typeof window !== 'undefined') {
-      const isDarkMode = localStorage.getItem('darkMode') === 'true';
-      setDarkMode(isDarkMode);
-      if (isDarkMode) {
-        document.documentElement.classList.add('dark');
-      }
-      
-      // REMOVE all document/body scroll locking
+  // Memoize expensive operations
+  const extractReferences = useCallback((content: string): Reference[] => {
+    if (!content || typeof content !== 'string') {
+      return [];
     }
-  }, []);
 
-  const toggleDarkMode = () => {
-    setDarkMode(!darkMode);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('darkMode', (!darkMode).toString());
-      document.documentElement.classList.toggle('dark');
-    }
-  };
-
-  const extractReferences = (content: string): Reference[] => {
     const references: Reference[] = [];
     
     // Extract markdown links with signed URLs: [filename.pdf](https://storage.googleapis.com/...)
@@ -153,8 +103,76 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       }
     }
 
-    console.log('📋 Extracted references from AI response:', references);
+    logger.debug('📋 Extracted references from AI response', { count: references.length });
     return references;
+  }, []);
+
+  // Memoize the sorted files for consistent document number matching
+  const sortedFiles = useMemo(() => {
+    return [...files].sort((a, b) => a.name.localeCompare(b.name));
+  }, [files]);
+  
+  // Simplified scroll function that ONLY targets the messages container
+  const scrollToBottom = useCallback(() => {
+    // Clear any existing timeout
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+    
+    // Set a new timeout to scroll after a short delay
+    scrollTimeoutRef.current = setTimeout(() => {
+      const messagesContainer = document.getElementById('messages-container');
+      if (messagesContainer) {
+        // Get the current scroll position
+        const scrollPosition = messagesContainer.scrollTop;
+        const scrollHeight = messagesContainer.scrollHeight;
+        const clientHeight = messagesContainer.clientHeight;
+        
+        // Only auto-scroll if user is already near the bottom
+        // or if this is a new message sequence
+        const isNearBottom = scrollHeight - scrollPosition - clientHeight < 100;
+        
+        if (isNearBottom || messages.length <= 2) {
+          messagesContainer.scrollTop = scrollHeight;
+        }
+      }
+    }, 100); // 100ms delay to batch scroll operations
+  }, [messages.length]);
+
+  // Add back the effect to scroll when messages change
+  useEffect(() => {
+    // Scroll to bottom when messages change
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
+
+  // Clean up timeout on component unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    // Check for dark mode preference
+    if (typeof window !== 'undefined') {
+      const isDarkMode = localStorage.getItem('darkMode') === 'true';
+      setDarkMode(isDarkMode);
+      if (isDarkMode) {
+        document.documentElement.classList.add('dark');
+      }
+      
+      // REMOVE all document/body scroll locking
+    }
+  }, []);
+
+  const toggleDarkMode = () => {
+    setDarkMode(!darkMode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('darkMode', (!darkMode).toString());
+      document.documentElement.classList.toggle('dark');
+    }
   };
 
   useEffect(() => {
@@ -163,40 +181,49 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
   }, []);
 
   const fetchFiles = async () => {
+    setFilesLoading(true);
+    setError(''); // Clear any previous errors
+    
     try {
       const response = await fetch('/api/files');
       const data = await response.json();
+      
       if (data.status === 'success') {
-        console.log('🗂️ Files fetched successfully:', data.files.length, 'files');
-        console.log('🔍 First file structure:', data.files[0]);
-        console.log('🔗 Files with signed_url:', data.files.filter((f: File) => f.signed_url).length);
-        console.log('❌ Files missing signed_url:', data.files.filter((f: File) => !f.signed_url).map((f: File) => f.name));
+        logger.debug('🗂️ Files fetched successfully', { 
+          count: data.files.length,
+          withSignedUrl: data.files.filter((f: File) => f.signed_url).length
+        });
         setFiles(data.files);
       } else {
-        console.error('Error fetching files:', data.message);
+        throw new Error(data.message || 'Failed to fetch files');
       }
     } catch (error) {
-      console.error('Error fetching files:', error);
+      handleError(error as Error, 'fetchFiles');
+    } finally {
+      setFilesLoading(false);
     }
   };
 
   const checkAssistant = async () => {
+    setLoading(true);
+    setError(''); // Clear any previous errors
+    
     try {
-      const response = await fetch('/api/assistants')
-      const data = await response.json()
+      const response = await fetch('/api/assistants');
+      const data = await response.json();
       
-      setLoading(false)
-      setAssistantExists(data.exists)
-      setAssistantName(data.assistant_name)
+      setAssistantExists(data.exists);
+      setAssistantName(data.assistant_name);
+      
       if (!data.exists) {
-        setError('Please create an Assistant')
+        setError('Please create an Assistant');
       }
     } catch (error) {
-      setLoading(false)
-      setError('Error connecting to the Assistant')
-      
+      handleError(error as Error, 'checkAssistant');
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
   const handlePromptSelect = (prompt: string) => {
     setInput(prompt);
@@ -222,7 +249,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
   const handleChatWithMessage = async (userMessage: Message) => {
     // Set a global timeout to force reset streaming state after 60 seconds maximum
     const globalTimeout = setTimeout(() => {
-      console.log('Global timeout reached - forcing streaming state reset');
+      logger.info('Global timeout reached - forcing streaming state reset');
       setIsStreaming(false);
     }, 60000); // 60 seconds absolute maximum
 
@@ -249,7 +276,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       const setStreamSafetyTimeout = () => {
         if (streamTimeout) clearTimeout(streamTimeout);
         streamTimeout = setTimeout(() => {
-          console.log('Stream timed out - no chunks received for 15 seconds');
+          logger.info('Stream timed out - no chunks received for 15 seconds');
           setIsStreaming(false);
         }, MAX_IDLE_TIME);
       };
@@ -258,7 +285,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
         if (activityTimeout) clearTimeout(activityTimeout);
         if (chunkCount > 0) {
           activityTimeout = setTimeout(() => {
-            console.log('Activity stopped after receiving chunks - considering stream complete');
+            logger.info('Activity stopped after receiving chunks - considering stream complete');
             setIsStreaming(false);
           }, 8000);
         }
@@ -274,17 +301,17 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
             chunkCount++;
 
             if (typeof chunk !== 'string') {
-              console.debug('Received non-string chunk, skipping', typeof chunk);
+              logger.debug('Received non-string chunk, skipping', typeof chunk);
               continue;
             }
 
             const data = JSON.parse(chunk);
             if (data && Array.isArray(data.choices) && data.choices.length === 0) {
-              console.debug('Stream finished: Received empty choices array');
+              logger.debug('Stream finished: Received empty choices array');
               setIsStreaming(false);
               break;
             } else if (data?.choices[0]?.finish_reason) {
-              console.debug('Stream finished by assistant', data.choices[0].finish_reason);
+              logger.debug('Stream finished by assistant', data.choices[0].finish_reason);
               setIsStreaming(false);
               break;
             }
@@ -302,11 +329,11 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
               });
             }
           } catch (error) {
-            console.error('Error parsing chunk', error instanceof Error ? error.message : String(error));
+            logger.error('Error parsing chunk', error instanceof Error ? error.message : String(error));
           }
         }
       } catch (streamError) {
-        console.error('Stream processing error:', streamError);
+        logger.error('Stream processing error:', streamError);
         setIsStreaming(false);
       } finally {
         if (streamTimeout) clearTimeout(streamTimeout);
@@ -318,7 +345,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       setReferencedFiles(extractedReferences);
 
     } catch (error) {
-      console.error('Error in chat:', error);
+      logger.error('Error in chat:', error);
       setError('An error occurred while chatting.');
     } finally {
       clearTimeout(globalTimeout);
@@ -331,7 +358,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
 
     // Set a global timeout to force reset streaming state after 60 seconds maximum
     const globalTimeout = setTimeout(() => {
-      console.log('Global timeout reached - forcing streaming state reset');
+      logger.info('Global timeout reached - forcing streaming state reset');
       setIsStreaming(false);
     }, 60000); // 60 seconds absolute maximum
 
@@ -371,7 +398,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       const setStreamSafetyTimeout = () => {
         if (streamTimeout) clearTimeout(streamTimeout);
         streamTimeout = setTimeout(() => {
-          console.log('Stream timed out - no chunks received for 15 seconds');
+          logger.info('Stream timed out - no chunks received for 15 seconds');
           setIsStreaming(false);
         }, MAX_IDLE_TIME);
       };
@@ -381,7 +408,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
         if (activityTimeout) clearTimeout(activityTimeout);
         if (chunkCount > 0) {
           activityTimeout = setTimeout(() => {
-            console.log('Activity stopped after receiving chunks - considering stream complete');
+            logger.info('Activity stopped after receiving chunks - considering stream complete');
             setIsStreaming(false);
           }, 8000); // 8 seconds after activity stops
         }
@@ -400,18 +427,18 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
 
             // Ensure chunk is a string before parsing
             if (typeof chunk !== 'string') {
-              console.debug('Received non-string chunk, skipping', typeof chunk);
+              logger.debug('Received non-string chunk, skipping', typeof chunk);
               continue;
             }
 
             const data = JSON.parse(chunk);
             // Check for empty choices array first as it might signify stream completion
             if (data && Array.isArray(data.choices) && data.choices.length === 0) {
-              console.debug('Stream finished: Received empty choices array');
+              logger.debug('Stream finished: Received empty choices array');
               setIsStreaming(false);
               break; // Exit the loop when done
             } else if (data?.choices[0]?.finish_reason) {
-              console.debug('Stream finished by assistant', data.choices[0].finish_reason);
+              logger.debug('Stream finished by assistant', data.choices[0].finish_reason);
               setIsStreaming(false);
               break; // Exit the loop when done
             }
@@ -429,11 +456,11 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
               });
             }
           } catch (error) {
-            console.error('Error parsing chunk', error instanceof Error ? error.message : String(error));
+            logger.error('Error parsing chunk', error instanceof Error ? error.message : String(error));
           }
         }
       } catch (streamError) {
-        console.error('Stream processing error:', streamError);
+        logger.error('Stream processing error:', streamError);
         setIsStreaming(false);
       } finally {
         // Clear all timeouts
@@ -447,7 +474,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       setReferencedFiles(extractedReferences);
 
     } catch (error) {
-      console.error('Error in chat:', error);
+      logger.error('Error in chat:', error);
       setError('An error occurred while chatting.');
     } finally {
       clearTimeout(globalTimeout);
@@ -456,7 +483,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
   };
 
   const handleOpenPdfModal = async (pdfUrl: string, fileName: string, startPage: number, endPage?: number, searchText?: string) => {
-    console.log('🎬 handleOpenPdfModal called with:', {
+    logger.info('🎬 handleOpenPdfModal called with:', {
       pdfUrl: pdfUrl ? `${pdfUrl.substring(0, 50)}...` : 'No URL',
       fileName,
       startPage,
@@ -465,16 +492,16 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     });
     
     if (!pdfUrl) {
-      console.error('❌ Cannot open PDF modal: No PDF URL provided');
+      logger.error('❌ Cannot open PDF modal: No PDF URL provided');
       return;
     }
     
-    console.log('✅ Processing PDF URL...');
+    logger.info('✅ Processing PDF URL...');
     
     try {
       // Process the PDF URL to ensure it works with the viewer
       const processedUrl = processPdfUrl(pdfUrl);
-      console.log('📄 PDF URL processed successfully');
+      logger.info('📄 PDF URL processed successfully');
       
       setPdfModalState({
         isOpen: true,
@@ -485,9 +512,9 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
         searchText
       });
       
-      console.log('🎯 PDF modal state updated, modal should open');
+      logger.info('🎯 PDF modal state updated, modal should open');
     } catch (error) {
-      console.error('❌ Error processing PDF URL:', error);
+      logger.error('❌ Error processing PDF URL:', error);
       // Fallback to original URL
       setPdfModalState({
         isOpen: true,
@@ -504,8 +531,12 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     setPdfModalState(prev => ({ ...prev, isOpen: false }));
   };
 
-  // Function to render message with clickable PDF references
-  const renderMessageContent = (content: string, isAssistant: boolean) => {
+  // Memoized function to render message with clickable PDF references
+  const renderMessageContent = useCallback((content: string, isAssistant: boolean, messageId?: string) => {
+    if (!content || typeof content !== 'string') {
+      return null;
+    }
+
     if (!isAssistant) {
       return (
         <ReactMarkdown
@@ -524,7 +555,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
 
     // For assistant messages during streaming, render as-is without processing
     if (isStreaming) {
-      console.log('🔄 Streaming in progress, rendering content as-is without PDF processing');
+      logger.debug('🔄 Streaming in progress, rendering content as-is without PDF processing');
       return (
         <ReactMarkdown
           components={{
@@ -540,12 +571,9 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       );
     }
 
-    // Only process PDF references when streaming is complete
-    console.log('✅ Streaming complete, processing PDF references...');
-    
-    // Check if content already contains processed PDF links
-    if (content.includes('#pdf-preview') || content.includes('[PDF:')) {
-      console.log('⚠️ Content already contains PDF links, rendering as-is');
+    // Check if content already contains processed PDF links - if so, render as-is
+    if (content.includes('#pdf-preview')) {
+      logger.debug('⚠️ Content already contains PDF preview links, rendering as-is');
       return (
         <ReactMarkdown
           components={{
@@ -558,33 +586,38 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
 
                 const startPage = parseInt(queryParams.get('start') || '1', 10);
                 const endPage = queryParams.has('end') ? parseInt(queryParams.get('end') || '1', 10) : undefined;
+                
+                // Get the actual display text from the link
                 const refText = Array.isArray(props.children) 
                   ? props.children.filter(child => typeof child === 'string').join(' ') 
                   : typeof props.children === 'string' 
                     ? props.children 
                     : '';
-                const searchText = refText
-                  .replace(/^PDF:\s*/, '')
-                  .replace(/\s*\(p\.\s*\d+(?:-\d+)?\)$/, '')
-                  .replace(/^\[.*\]\s*/, '')
-                  .trim();
-                const displayText = refText || `PDF: ${fileNameForModal} (p. ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})`;
+                
+                // Extract search text from the clean filename
+                const cleanFileName = fileNameForModal.replace('_compressed.pdf', '').replace('.pdf', '');
                 
                 return (
                   <a 
                     href="#"
                     onClick={(e) => {
                       e.preventDefault();
+                      logger.debug('🚀 Opening PDF modal', { 
+                        pdfUrlFromLink, 
+                        fileNameForModal, 
+                        startPage, 
+                        endPage
+                      });
                       handleOpenPdfModal(
                         pdfUrlFromLink, 
                         fileNameForModal, 
                         startPage, 
                         endPage,
-                        searchText
+                        ''
                       );
                     }}
-                    title={`View ${fileNameForModal}${startPage ? ` (page ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})` : ''}`}
-                    className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline inline-flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-700 shadow-sm"
+                    title={`View ${cleanFileName} (pages ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})`}
+                    className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline inline-flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-700 shadow-sm transition-colors duration-200"
                   >
                     <svg
                       className="w-4 h-4 mr-1 flex-shrink-0"
@@ -594,7 +627,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                     >
                       <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 005.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
                     </svg>
-                    <span className="truncate max-w-[200px]">{displayText}</span>
+                    <span className="truncate max-w-[200px] font-medium">{refText}</span>
                   </a>
                 );
               }
@@ -610,19 +643,24 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
         </ReactMarkdown>
       );
     }
+
+    // Only process PDF references when streaming is complete and content hasn't been processed
+    logger.debug('✅ Streaming complete, processing PDF references...');
     
     // Extract references directly from the current content
     const currentReferences = extractReferences(content);
-    console.log('🔗 References extracted from current content:', currentReferences);
+    logger.debug('🔗 References extracted from current content', { count: currentReferences.length });
     
     const references = detectPageReferences(content);
     
     // Enhanced debug logging
-    console.log('🎯 Detected PDF references:', references.length > 0 ? references : 'None found');
-    console.log('📊 Reference count:', references.length);
+    logger.debug('🎯 Detected PDF references', { 
+      count: references.length,
+      highConfidence: references.filter(r => r.confidence > 0.8).length
+    });
     
     if (references.length === 0) {
-      console.log('❌ No PDF references detected, rendering normally');
+      logger.debug('❌ No PDF references detected, rendering normally');
       // If no references, render normally
       return (
         <ReactMarkdown
@@ -639,47 +677,54 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       );
     }
 
-    console.log('✅ Found PDF references, processing message...');
+    logger.debug('✅ Found PDF references, processing message...');
     
     // If we have references, process the message
     let processedContent = content;
     // Process in reverse order to not affect indices
     for (let i = references.length - 1; i >= 0; i--) {
       const ref = references[i];
-      console.log(`🔗 Processing reference ${i + 1}:`, ref);
+      logger.debug(`🔗 Processing reference ${i + 1}`, { 
+        match: ref.fullMatch,
+        confidence: ref.confidence 
+      });
       
-      const matchingFile = findMatchingPDFFile(ref, files, currentReferences);
-      console.log(`📋 Matching file for reference:`, matchingFile?.name || 'None found');
+      const matchingFile = findMatchingPDFFile(ref, sortedFiles, currentReferences);
+      logger.debug(`📋 Matching file for reference`, { 
+        fileName: matchingFile?.name || 'None found',
+        confidence: ref.confidence
+      });
       
       if (matchingFile) {
         const beforeRef = processedContent.substring(0, ref.matchIndex);
         const afterRef = processedContent.substring(ref.matchIndex + ref.fullMatch.length);
         const pdfUrl = matchingFile.signed_url; 
         if (!pdfUrl) {
-          console.error("❌ Error: matchingFile.signed_url is missing for file:", matchingFile.name);
+          logger.error("❌ Error: matchingFile.signed_url is missing for file:", matchingFile.name);
         } else {
           const fileNameOnly = matchingFile.name.split(/[\\/]/).pop() || matchingFile.name;
           
-          // Create appropriate display text based on reference type
-          let displayText: string;
-          if (ref.documentNumber) {
-            displayText = `PDF: ${fileNameOnly} [${ref.documentNumber}] (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
-          } else if (ref.fileName) {
-            displayText = `PDF: ${fileNameOnly} (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
-          } else {
-            displayText = `PDF: ${fileNameOnly} (p. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''})`;
-          }
+          // Create clean display text - just filename and pages, no "PDF:" prefix
+          const cleanFileName = fileNameOnly.replace('_compressed.pdf', '').replace('.pdf', '');
+          const displayText = `${cleanFileName}, pp. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''}`;
           
           const pdfLink = `[${displayText}](#pdf-preview?url=${encodeURIComponent(pdfUrl)}&file=${encodeURIComponent(fileNameOnly)}&start=${ref.startPage}&end=${ref.endPage || ref.startPage})`;
           processedContent = `${beforeRef}${pdfLink}${afterRef}`;
-          console.log(`✅ Created PDF link for ${fileNameOnly}:`, pdfLink);
+          logger.debug(`✅ Created clean PDF link for ${fileNameOnly}`, { confidence: ref.confidence });
         }
       } else {
-        console.log(`❌ No matching file found for reference:`, ref);
+        logger.debug(`❌ No matching file found for reference`, { 
+          match: ref.fullMatch,
+          confidence: ref.confidence 
+        });
       }
     }
     
-    console.log('📝 Final processed content:', processedContent);
+    logger.debug('📝 Final processed content ready', { 
+      originalLength: content.length,
+      processedLength: processedContent.length,
+      referencesProcessed: references.length
+    });
     
     return (
       <ReactMarkdown
@@ -704,16 +749,15 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                 .replace(/\s*\(p\.\s*\d+(?:-\d+)?\)$/, '')
                 .replace(/^\[.*\]\s*/, '')
                 .trim();
-              const displayText = refText || `PDF: ${fileNameForModal} (p. ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})`;
               
-              console.log('🖱️ PDF link clicked:', { fileNameForModal, startPage, endPage, searchText });
+              logger.debug('🖱️ PDF link clicked', { fileNameForModal, startPage, endPage, searchText });
               
               return (
                 <a 
                   href="#"
                   onClick={(e) => {
                     e.preventDefault();
-                    console.log('🚀 Opening PDF modal:', { pdfUrlFromLink, fileNameForModal, startPage, endPage, searchText });
+                    logger.debug('🚀 Opening PDF modal', { pdfUrlFromLink, fileNameForModal, startPage, endPage, searchText });
                     handleOpenPdfModal(
                       pdfUrlFromLink, 
                       fileNameForModal, 
@@ -722,8 +766,8 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                       searchText
                     );
                   }}
-                  title={`View ${fileNameForModal}${startPage ? ` (page ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})` : ''}`}
-                  className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline inline-flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-700 shadow-sm"
+                  title={`View ${fileNameForModal.replace('_compressed.pdf', '').replace('.pdf', '')} (pages ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})`}
+                  className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline inline-flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-700 shadow-sm transition-colors duration-200"
                 >
                   <svg
                     className="w-4 h-4 mr-1 flex-shrink-0"
@@ -733,7 +777,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                   >
                     <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 005.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
                   </svg>
-                  <span className="truncate max-w-[200px]">{displayText}</span>
+                  <span className="truncate max-w-[200px] font-medium">{refText}</span>
                 </a>
               );
             }
@@ -748,56 +792,83 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
         {processedContent}
       </ReactMarkdown>
     );
-  };
-
-  // Keep the simple direct scroll function
-  useEffect(() => {
-    // Simple, direct scroll to bottom of messages container
-    if (messages.length > 0) {
-      const container = document.getElementById('messages-container');
-      if (container) {
-        setTimeout(() => {
-          container.scrollTop = container.scrollHeight;
-        }, 50);
-      }
-    }
-  }, [messages]);
+  }, [isStreaming, extractReferences, sortedFiles, handleOpenPdfModal]);
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 bg-gray-50 dark:bg-gray-900">
-      <button
-        onClick={toggleDarkMode}
-        className="absolute top-4 right-4 p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-        aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
-      >
-        {darkMode ? (
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-          </svg>
-        ) : (
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-          </svg>
-        )}
-      </button>
-      {loading ? (
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-900 mb-4"></div>
-          <p className="text-gray-500">Connecting to your Assistant...</p>
-        </div>
-      ) : assistantExists ? (
-        <div className="w-full max-w-6xl xl:max-w-7xl">
-          <h1 className="text-2xl font-bold mb-4 text-indigo-900 dark:text-indigo-100"><a href="https://www.industrialengineer.ai/blog/industrialengineer-ai-assistant/" target="_blank" rel="noopener noreferrer" className="hover:underline">Industrial Engineer.ai Assistant</a>: {assistantName} <span className="text-green-500">●</span></h1>
-          <div className="flex flex-col gap-4">
-            <div className="w-full">
-              <div id="messages-container" className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg mb-4 h-[calc(100vh-300px)] overflow-y-auto overflow-x-hidden">
-                {messages.map((message, index) => (
-                  <div key={index} className={`mb-2 flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`flex items-start ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                      <div className={`${message.role === 'user' ? 'ml-2' : 'mr-2'}`}>
-                        {message.role === 'user' ? (
-                          <span className="text-2xl">👤</span>
-                        ) : (
+    <ErrorBoundary>
+      <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 bg-gray-50 dark:bg-gray-900">
+        <button
+          onClick={toggleDarkMode}
+          className="absolute top-4 right-4 p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+          aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          {darkMode ? (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            </svg>
+          )}
+        </button>
+        
+        {loading ? (
+          <ConnectionLoading message="Connecting to your Assistant..." />
+        ) : assistantExists ? (
+          <div className="w-full max-w-6xl xl:max-w-7xl">
+            <h1 className="text-2xl font-bold mb-4 text-indigo-900 dark:text-indigo-100">
+              <a href="https://www.industrialengineer.ai/blog/industrialengineer-ai-assistant/" target="_blank" rel="noopener noreferrer" className="hover:underline">
+                Industrial Engineer.ai Assistant
+              </a>: {assistantName} <span className="text-green-500">●</span>
+            </h1>
+            
+            <div className="flex flex-col gap-4">
+              <div className="w-full">
+                <div id="messages-container" className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg mb-4 h-[calc(100vh-300px)] overflow-y-auto overflow-x-hidden">
+                  {messages.map((message, index) => (
+                    <div key={index} className={`mb-2 flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`flex items-start ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                        <div className={`${message.role === 'user' ? 'ml-2' : 'mr-2'}`}>
+                          {message.role === 'user' ? (
+                            <span className="text-2xl">👤</span>
+                          ) : (
+                            <a href="https://www.industrialengineer.ai/blog/industrialengineer-ai-assistant/" target="_blank" rel="noopener noreferrer">
+                              <img
+                                src="/industrialengineer-ai-logo.png"
+                                alt="Industrial Engineer.ai Assistant"
+                                className="w-6 h-6 rounded-full object-cover"
+                              />
+                            </a>
+                          )}
+                        </div>
+                        <span className={`inline-block p-2 rounded-lg ${
+                          message.role === 'user' ? 'bg-indigo-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                        } max-w-[80%] break-words`}>
+                          {renderMessageContent(message.content, message.role === 'assistant', message.id)}
+                          {message.references && showCitations && (
+                            <div className="mt-2">
+                              <ul>
+                                {message.references.map((ref, i) => (
+                                  <li key={i}>
+                                    <a href={ref.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
+                                      {ref.name}
+                                    </a>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {/* Show streaming indicator when AI is responding */}
+                  {isStreaming && (
+                    <div className="mb-2 flex justify-start">
+                      <div className="flex items-start">
+                        <div className="mr-2">
                           <a href="https://www.industrialengineer.ai/blog/industrialengineer-ai-assistant/" target="_blank" rel="noopener noreferrer">
                             <img
                               src="/industrialengineer-ai-logo.png"
@@ -805,119 +876,159 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                               className="w-6 h-6 rounded-full object-cover"
                             />
                           </a>
-                        )}
+                        </div>
+                        <div className="bg-gray-100 dark:bg-gray-700 p-3 rounded-lg">
+                          <StreamingIndicator />
+                        </div>
                       </div>
-                      <span className={`inline-block p-2 rounded-lg ${
-                        message.role === 'user' ? 'bg-indigo-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                      } max-w-[80%] break-words`}>
-                        {renderMessageContent(message.content, message.role === 'assistant')}
-                        {message.references && showCitations && (
-                          <div className="mt-2">
-                            <ul>
-                              {message.references.map((ref, i) => (
-                                <li key={i}>
-                                  <a href={ref.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
-                                    {ref.name}
-                                  </a>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </span>
                     </div>
-                  </div>
-                ))}
+                  )}
+                </div>
+                
+                {/* Files Loading Indicator */}
+                {filesLoading && (
+                  <FileLoading 
+                    fileCount={files.length}
+                    className="mb-4"
+                  />
+                )}
+                
+                {/* Prompt Suggestions */}
+                <ErrorBoundary
+                  resetKeys={[messages.length, files.length]}
+                  resetOnPropsChange={true}
+                >
+                  <PromptSuggestions 
+                    messages={messages}
+                    files={files}
+                    onPromptSelect={handlePromptSelect}
+                    isStreaming={isStreaming}
+                  />
+                </ErrorBoundary>
+                
+                <form onSubmit={(e) => { e.preventDefault(); handleChat(); }} className="flex mb-4">
+                  <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    className="flex-grow p-2 border rounded-l-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-black dark:text-white dark:bg-gray-800 dark:border-gray-600"
+                    placeholder="Type your message..."
+                    disabled={isStreaming}
+                  />
+                  <button
+                    type="submit"
+                    className="bg-indigo-500 text-white p-2 rounded-r-lg hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    disabled={isStreaming || !input.trim()}
+                  >
+                    {isStreaming ? (
+                      <div className="flex items-center space-x-2">
+                        <TypingIndicator variant="dots" className="scale-75" />
+                        <span>Sending...</span>
+                      </div>
+                    ) : (
+                      'Send'
+                    )}
+                  </button>
+                </form>
+                
+                {/* Enhanced Error Display */}
+                {error && (
+                  <ErrorBoundary>
+                    <div className="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 text-red-700 dark:text-red-400 p-4 mb-4 rounded-md shadow-md">
+                      <div className="flex items-center">
+                        <svg className="h-6 w-6 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        <p className="font-semibold">Error</p>
+                      </div>
+                      <p className="mt-2">{error}</p>
+                      <button
+                        onClick={() => setError('')}
+                        className="mt-3 text-sm bg-red-100 dark:bg-red-800 hover:bg-red-200 dark:hover:bg-red-700 text-red-800 dark:text-red-200 px-3 py-1 rounded transition-colors"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </ErrorBoundary>
+                )}
               </div>
               
-              {/* Prompt Suggestions */}
-              <PromptSuggestions 
-                messages={messages}
-                files={files}
-                onPromptSelect={handlePromptSelect}
-                isStreaming={isStreaming}
-              />
-              
-              <form onSubmit={(e) => { e.preventDefault(); handleChat(); }} className="flex mb-4">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  className="flex-grow p-2 border rounded-l-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-black dark:text-white"
-                  placeholder="Type your message..."
-                  disabled={isStreaming}
-                />
-                <button
-                  type="submit"
-                  className="bg-indigo-500 text-white p-2 rounded-r-lg hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  disabled={isStreaming}
-                >
-                  {isStreaming ? 'Streaming...' : 'Send'}
-                </button>
-              </form>
-              {error && (
-                <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 rounded-md shadow-md">
-                  <div className="flex items-center">
-                    <svg className="h-6 w-6 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                    <p className="font-semibold">Error</p>
-                  </div>
-                  <p className="mt-2">{error}</p>
+              {/* Assistant Files Section with Error Boundary */}
+              {showAssistantFiles && (
+                <div className="w-full">
+                  <ErrorBoundary
+                    resetKeys={[files.length, referencedFiles.length]}
+                    resetOnPropsChange={true}
+                  >
+                    <AssistantFiles 
+                      files={files} 
+                      referencedFiles={referencedFiles} 
+                      onOpenPdfModal={handleOpenPdfModal}
+                    />
+                  </ErrorBoundary>
                 </div>
               )}
             </div>
-            {showAssistantFiles && (
-              <div className="w-full">
-                <AssistantFiles 
-                  files={files} 
-                  referencedFiles={referencedFiles} 
-                  onOpenPdfModal={handleOpenPdfModal}
-                />
-              </div>
-            )}
           </div>
+        ) : (
+          <div className="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 text-red-700 dark:text-red-400 p-4 rounded-md shadow-md max-w-2xl">
+            <div className="flex items-center">
+              <svg className="h-6 w-6 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <p className="font-semibold">Error</p>
+            </div>
+            <p className="mt-2">{error}</p>
+            <div className="mt-4 text-sm">
+              <p className="font-semibold">To resolve this issue:</p>
+              <ol className="list-decimal list-inside mt-2 space-y-2">
+                <li>Create a Industrial Engineer.ai Assistant at <a href="https://app.industrialengineer.ai" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">https://app.industrialengineer.ai</a></li>
+                <li>Export the environment variable <code className="bg-red-200 dark:bg-red-800 px-1 rounded">PINECONE_ASSISTANT_NAME</code> with the value of your assistant&apos;s name</li>
+                <li>Restart your application</li>
+              </ol>
+            </div>
+            <button
+              onClick={() => {
+                setError('');
+                checkAssistant();
+              }}
+              className="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded transition-colors"
+            >
+              Retry Connection
+            </button>
+          </div>
+        )}
+        
+        <div className="mt-8 text-sm text-gray-500 dark:text-gray-400 flex space-x-4">
+          <a href="https://www.industrialengineer.ai/blog/industrialengineer-ai-assistant/" target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+            ℹ️ What are Industrial Engineer.ai Assistants?
+          </a>
+          <a href="https://app.industrialengineer.ai" target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+            🤖 Create your own Industrial Engineer.ai Assistant today
+          </a>
         </div>
-      ) : (
-        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md shadow-md max-w-2xl">
-          <div className="flex items-center">
-            <svg className="h-6 w-6 mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-            </svg>
-            <p className="font-semibold">Error</p>
-          </div>
-          <p className="mt-2">{error}</p>
-          <div className="mt-4 text-sm">
-            <p className="font-semibold">To resolve this issue:</p>
-            <ol className="list-decimal list-inside mt-2 space-y-2">
-              <li>Create a Industrial Engineer.ai Assistant at <a href="https://app.industrialengineer.ai" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">https://app.industrialengineer.ai</a></li>
-              <li>Export the environment variable <code className="bg-red-200 px-1 rounded">PINECONE_ASSISTANT_NAME</code> with the value of your assistant&apos;s name</li>
-              <li>Restart your application</li>
-            </ol>
-          </div>
-        </div>
-      )}
-      <div className="mt-8 text-sm text-gray-500 flex space-x-4">
-        <a href="https://www.industrialengineer.ai/blog/industrialengineer-ai-assistant/" target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 transition-colors">
-          ℹ️ What are Industrial Engineer.ai Assistants?
-        </a>
-        <a href="https://app.industrialengineer.ai" target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 transition-colors">
-          🤖 Create your own Industrial Engineer.ai Assistant today
-        </a>
-      </div>
 
-      {/* PDF Preview Modal */}
-      {pdfModalState.isOpen && (
-        <EnhancedPDFPreviewModal 
-          isOpen={pdfModalState.isOpen}
-          onClose={handleClosePdfModal}
-          pdfUrl={pdfModalState.pdfUrl}
-          fileName={pdfModalState.fileName}
-          startPage={pdfModalState.startPage}
-          endPage={pdfModalState.endPage}
-          searchText={pdfModalState.searchText}
+        {/* PDF Preview Modal with Error Boundary */}
+        <ErrorBoundary>
+          {pdfModalState.isOpen && (
+            <EnhancedPDFPreviewModal 
+              isOpen={pdfModalState.isOpen}
+              onClose={handleClosePdfModal}
+              pdfUrl={pdfModalState.pdfUrl}
+              fileName={pdfModalState.fileName}
+              startPage={pdfModalState.startPage}
+              endPage={pdfModalState.endPage}
+              searchText={pdfModalState.searchText}
+            />
+          )}
+        </ErrorBoundary>
+        
+        {/* Loading Overlay for Initial Connection */}
+        <LoadingOverlay 
+          isVisible={loading}
+          message="Connecting to your Assistant..."
         />
-      )}
-    </main>
+      </main>
+    </ErrorBoundary>
   );
 }

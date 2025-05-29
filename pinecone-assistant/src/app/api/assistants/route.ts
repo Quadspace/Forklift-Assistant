@@ -4,8 +4,6 @@ import { logger } from '../../utils/logger';
 import { apiClient } from '../../utils/apiClient';
 
 export async function GET() {
-  const endTimer = logger.time('assistants_api_duration');
-  
   const { apiKey, assistantName } = await checkAssistantPrerequisites();
   
   if (!apiKey || !assistantName) {
@@ -41,7 +39,6 @@ export async function GET() {
       cached: response.cached 
     });
 
-    endTimer();
     return NextResponse.json({
       status: "success",
       message: `Assistant '${assistantName}' check completed.`,
@@ -55,7 +52,6 @@ export async function GET() {
       assistantName 
     });
     
-    endTimer();
     return NextResponse.json({
       status: "error",
       message: `Failed to check assistant: ${error instanceof Error ? error.message : String(error)}`,

@@ -5,20 +5,18 @@ import { apiClient } from '../../utils/apiClient';
 import { Cache } from '../../utils/cache';
 
 export async function POST(request: NextRequest) {
-  const endTimer = logger.time('document_chunks_api_duration');
-  
-  const { apiKey, assistantName } = await checkAssistantPrerequisites();
-  
-  if (!apiKey || !assistantName) {
-    logger.error('Missing required environment variables for document chunks API');
-    return NextResponse.json({
-      status: "error",
-      message: "PINECONE_API_KEY and PINECONE_ASSISTANT_NAME are required.",
-      chunks: []
-    }, { status: 400 });
-  }
-
   try {
+    const { apiKey, assistantName } = await checkAssistantPrerequisites();
+    
+    if (!apiKey || !assistantName) {
+      logger.error('Missing required environment variables for document chunks API');
+      return NextResponse.json({
+        status: "error",
+        message: "PINECONE_API_KEY and PINECONE_ASSISTANT_NAME are required.",
+        chunks: []
+      }, { status: 400 });
+    }
+
     const body = await request.json();
     const { fileName, startPage, endPage, searchQuery } = body;
 
@@ -96,7 +94,6 @@ export async function POST(request: NextRequest) {
       cached: response.cached 
     });
 
-    endTimer();
     return NextResponse.json({
       status: "success",
       message: `Found ${chunks.length} relevant chunks`,
@@ -109,7 +106,6 @@ export async function POST(request: NextRequest) {
       error: error instanceof Error ? error.message : String(error) 
     });
     
-    endTimer();
     return NextResponse.json({
       status: "error",
       message: `Failed to fetch document chunks: ${error instanceof Error ? error.message : String(error)}`,

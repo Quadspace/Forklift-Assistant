@@ -28,12 +28,40 @@ class StreamManager {
   private accumulatedContent = '';
   private cacheKey: string;
   private connectionStartTime: number = 0;
+  private lastActivityTime: number = 0;
+  private maxInactivityTime = 30000; // 30 seconds max inactivity
+  private maxConnectionTime = 120000; // 2 minutes max total connection time
 
   constructor(stream: any, cacheKey: string) {
     this.stream = stream;
     this.cacheKey = cacheKey;
     this.state = StreamState.ACTIVE;
     this.connectionStartTime = Date.now();
+    this.lastActivityTime = Date.now();
+    this.setupGlobalTimeout();
+  }
+
+  // Setup a global timeout to prevent infinite connections
+  private setupGlobalTimeout(): void {
+    const globalTimeout = setTimeout(() => {
+      logger.warn('Global connection timeout reached - forcing stream completion', {
+        duration: Date.now() - this.connectionStartTime,
+        state: this.state
+      });
+      this.safeComplete();
+    }, this.maxConnectionTime);
+    
+    this.addTimeout(globalTimeout);
+  }
+
+  // Update activity timestamp
+  updateActivity(): void {
+    this.lastActivityTime = Date.now();
+  }
+
+  // Check if stream has been inactive too long
+  isInactive(): boolean {
+    return (Date.now() - this.lastActivityTime) > this.maxInactivityTime;
   }
 
   // Safe stream update with state checking
@@ -43,14 +71,25 @@ class StreamManager {
       return false;
     }
 
+    // Check for inactivity timeout
+    if (this.isInactive()) {
+      logger.warn('Stream inactive for too long - completing stream', {
+        inactiveDuration: Date.now() - this.lastActivityTime
+      });
+      this.safeComplete();
+      return false;
+    }
+
     try {
+      this.updateActivity();
       this.stream.update(data);
       return true;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logger.error('Error updating stream', { 
         error: errorMsg,
-        state: this.state 
+        state: this.state,
+        dataLength: data?.length || 0
       });
       
       // Check for specific "stream closed" error
@@ -210,7 +249,6 @@ class StreamManager {
 }
 
 export async function chat(messages: Message[]) {
-  const endTimer = logger.time('chat_total_duration');
   let streamManager: StreamManager | null = null;
 
   try {
@@ -252,7 +290,6 @@ export async function chat(messages: Message[]) {
         stream.error({ message: 'Error retrieving cached response' });
       }
       
-      endTimer();
       return { object: stream.value };
     }
 
@@ -333,27 +370,16 @@ export async function chat(messages: Message[]) {
 
     streamManager.setEventSource(eventSource);
 
-    // Extended activity timeout for production (40 seconds)
-    let activityTimeout: NodeJS.Timeout | null = null;
-    
-    const resetActivityTimeout = () => {
-      if (activityTimeout) {
-        clearTimeout(activityTimeout);
+    // Simplified activity monitoring using StreamManager's built-in tracking
+    const activityMonitor = setInterval(() => {
+      if (streamManager && streamManager.isActive() && streamManager.isInactive()) {
+        logger.warn('Stream inactivity detected by monitor - completing stream');
+        streamManager.safeComplete();
+        clearInterval(activityMonitor);
       }
-      
-      activityTimeout = setTimeout(() => {
-        logger.warn('Activity timeout reached - no data received for 40 seconds');
-        if (streamManager && streamManager.isActive()) {
-          streamManager.safeComplete();
-        }
-      }, 40000); // 40 seconds of inactivity
+    }, 5000); // Check every 5 seconds
 
-      if (streamManager) {
-        streamManager.addTimeout(activityTimeout);
-      }
-    };
-
-    resetActivityTimeout();
+    streamManager.addTimeout(activityMonitor);
 
     // Handle incoming messages with improved error handling
     eventSource.onmessage = (event: MessageEvent) => {
@@ -365,7 +391,9 @@ export async function chat(messages: Message[]) {
       logger.debug('Received event data chunk', { 
         dataLength: event.data?.length || 0 
       });
-      resetActivityTimeout();
+      
+      // Update activity in StreamManager
+      streamManager.updateActivity();
       
       try {
         // Handle empty or whitespace-only data
@@ -456,7 +484,6 @@ export async function chat(messages: Message[]) {
       }
     };
 
-    endTimer();
     return { object: streamManager.getStreamValue() };
 
   } catch (error) {
@@ -485,11 +512,9 @@ export async function chat(messages: Message[]) {
       // If streamManager wasn't created, create a basic error response
       const stream = createStreamableValue();
       stream.error({ message: 'Service temporarily unavailable - please try again' });
-      endTimer();
       return { object: stream.value };
     }
     
-    endTimer();
     return { object: streamManager.getStreamValue() };
   }
 }

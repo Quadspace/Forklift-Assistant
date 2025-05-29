@@ -1,83 +1,110 @@
-type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+/**
+ * Enhanced logging utility for production and development environments
+ */
 
-interface LoggerConfig {
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+interface LogEntry {
   level: LogLevel;
-  enableConsole: boolean;
-  enableMetrics: boolean;
+  message: string;
+  data?: any;
+  timestamp: string;
+  component?: string;
 }
 
 class Logger {
-  private config: LoggerConfig;
-  private metrics: Map<string, number> = new Map();
+  private isDevelopment: boolean;
+  private logHistory: LogEntry[] = [];
+  private maxHistorySize = 100;
 
   constructor() {
-    const isProduction = process.env.NODE_ENV === 'production';
-    this.config = {
-      level: isProduction ? 'error' : 'debug',
-      enableConsole: !isProduction,
-      enableMetrics: true
+    this.isDevelopment = process.env.NODE_ENV === 'development';
+  }
+
+  private createLogEntry(level: LogLevel, message: string, data?: any, component?: string): LogEntry {
+    return {
+      level,
+      message,
+      data,
+      timestamp: new Date().toISOString(),
+      component
     };
+  }
+
+  private addToHistory(entry: LogEntry): void {
+    this.logHistory.push(entry);
+    if (this.logHistory.length > this.maxHistorySize) {
+      this.logHistory.shift();
+    }
   }
 
   private shouldLog(level: LogLevel): boolean {
-    const levels: Record<LogLevel, number> = {
-      error: 0,
-      warn: 1,
-      info: 2,
-      debug: 3
-    };
-    return levels[level] <= levels[this.config.level];
-  }
-
-  error(message: string, data?: any): void {
-    if (this.shouldLog('error')) {
-      console.error(`[ERROR] ${message}`, data || '');
+    if (!this.isDevelopment && level === 'debug') {
+      return false;
     }
+    return true;
   }
 
-  warn(message: string, data?: any): void {
-    if (this.shouldLog('warn') && this.config.enableConsole) {
-      console.warn(`[WARN] ${message}`, data || '');
-    }
-  }
-
-  info(message: string, data?: any): void {
-    if (this.shouldLog('info') && this.config.enableConsole) {
-      console.info(`[INFO] ${message}`, data || '');
-    }
-  }
-
-  debug(message: string, data?: any): void {
-    if (this.shouldLog('debug') && this.config.enableConsole) {
-      console.log(`[DEBUG] ${message}`, data || '');
-    }
-  }
-
-  // Metrics logging for performance monitoring
-  metric(name: string, value: number, unit: string = 'ms'): void {
-    if (this.config.enableMetrics) {
-      this.metrics.set(name, value);
-      if (this.shouldLog('info')) {
-        console.info(`[METRIC] ${name}: ${value}${unit}`);
+  debug(message: string, data?: any, component?: string): void {
+    const entry = this.createLogEntry('debug', message, data, component);
+    this.addToHistory(entry);
+    
+    if (this.shouldLog('debug')) {
+      if (component) {
+        console.log(`[DEBUG:${component}] ${message}`, data || '');
+      } else {
+        console.log(`[DEBUG] ${message}`, data || '');
       }
     }
   }
 
-  // Performance timing helper
-  time(label: string): () => void {
-    const start = Date.now();
-    return () => {
-      const duration = Date.now() - start;
-      this.metric(label, duration);
-    };
+  info(message: string, data?: any, component?: string): void {
+    const entry = this.createLogEntry('info', message, data, component);
+    this.addToHistory(entry);
+    
+    if (this.shouldLog('info')) {
+      if (component) {
+        console.info(`[INFO:${component}] ${message}`, data || '');
+      } else {
+        console.info(`[INFO] ${message}`, data || '');
+      }
+    }
   }
 
-  getMetrics(): Record<string, number> {
-    return Object.fromEntries(this.metrics);
+  warn(message: string, data?: any, component?: string): void {
+    const entry = this.createLogEntry('warn', message, data, component);
+    this.addToHistory(entry);
+    
+    if (this.shouldLog('warn')) {
+      if (component) {
+        console.warn(`[WARN:${component}] ${message}`, data || '');
+      } else {
+        console.warn(`[WARN] ${message}`, data || '');
+      }
+    }
   }
 
-  clearMetrics(): void {
-    this.metrics.clear();
+  error(message: string, data?: any, component?: string): void {
+    const entry = this.createLogEntry('error', message, data, component);
+    this.addToHistory(entry);
+    
+    if (this.shouldLog('error')) {
+      if (component) {
+        console.error(`[ERROR:${component}] ${message}`, data || '');
+      } else {
+        console.error(`[ERROR] ${message}`, data || '');
+      }
+    }
+  }
+
+  // Get recent log history for debugging
+  getHistory(): LogEntry[] {
+    return [...this.logHistory];
+  }
+
+  // Clear log history
+  clearHistory(): void {
+    this.logHistory = [];
   }
 }
 

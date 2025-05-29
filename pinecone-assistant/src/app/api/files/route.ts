@@ -4,8 +4,6 @@ import { logger } from '../../utils/logger';
 import { apiClient } from '../../utils/apiClient';
 
 export async function GET() {
-  const endTimer = logger.time('files_api_duration');
-  
   const { apiKey, assistantName } = await checkAssistantPrerequisites();
   
   if (!apiKey || !assistantName) {
@@ -63,7 +61,6 @@ export async function GET() {
       cached: response.cached 
     });
 
-    endTimer();
     return NextResponse.json({
       status: "success",
       message: `Files for assistant '${assistantName}' retrieved successfully.`,
@@ -76,7 +73,6 @@ export async function GET() {
       assistantName 
     });
     
-    endTimer();
     return NextResponse.json({
       status: "error",
       message: `Failed to list assistant files: ${error instanceof Error ? error.message : String(error)}`,

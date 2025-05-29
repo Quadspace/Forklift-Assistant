@@ -63,7 +63,7 @@ class ApiClient {
         clearTimeout(timeoutId);
         
         const duration = Date.now() - startTime;
-        logger.metric(`api_request_${response.status}`, duration);
+        logger.debug(`API request completed in ${duration}ms`, { url, status: response.status });
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
