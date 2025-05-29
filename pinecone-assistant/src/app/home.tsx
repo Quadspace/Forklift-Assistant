@@ -571,87 +571,31 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       );
     }
 
-    // Check if content already contains processed PDF links - if so, render as-is
-    if (content.includes('#pdf-preview')) {
-      logger.debug('⚠️ Content already contains PDF preview links, rendering as-is');
-      return (
-        <ReactMarkdown
-          components={{
-            a: ({ node, href, ...props }) => {
-              if (href?.startsWith('#pdf-preview')) {
-                const queryParams = new URLSearchParams(href.substring(href.indexOf('?')));
-                const pdfUrlFromLink = queryParams.get('url') || '';
-                let fileNameForModal = queryParams.get('file') || '';
-                fileNameForModal = fileNameForModal.split(/[\\/]/).pop() || fileNameForModal;
-
-                const startPage = parseInt(queryParams.get('start') || '1', 10);
-                const endPage = queryParams.has('end') ? parseInt(queryParams.get('end') || '1', 10) : undefined;
-                
-                // Get the actual display text from the link
-                const refText = Array.isArray(props.children) 
-                  ? props.children.filter(child => typeof child === 'string').join(' ') 
-                  : typeof props.children === 'string' 
-                    ? props.children 
-                    : '';
-                
-                // Extract search text from the clean filename
-                const cleanFileName = fileNameForModal.replace('_compressed.pdf', '').replace('.pdf', '');
-                
-                return (
-                  <a 
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      logger.debug('🚀 Opening PDF modal', { 
-                        pdfUrlFromLink, 
-                        fileNameForModal, 
-                        startPage, 
-                        endPage
-                      });
-                      handleOpenPdfModal(
-                        pdfUrlFromLink, 
-                        fileNameForModal, 
-                        startPage, 
-                        endPage,
-                        ''
-                      );
-                    }}
-                    title={`View ${cleanFileName} (pages ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})`}
-                    className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline inline-flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-700 shadow-sm transition-colors duration-200"
-                  >
-                    <svg
-                      className="w-4 h-4 mr-1 flex-shrink-0"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 005.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
-                    </svg>
-                    <span className="truncate max-w-[200px] font-medium">{refText}</span>
-                  </a>
-                );
-              }
-              return (
-                <a {...props} href={href} className="text-blue-600 dark:text-blue-400 hover:underline">
-                  🔗 {props.children}
-                </a>
-              );
-            },
-          }}
-        >
-          {content}
-        </ReactMarkdown>
-      );
-    }
-
     // Only process PDF references when streaming is complete and content hasn't been processed
     logger.debug('✅ Streaming complete, processing PDF references...');
     
+    // FIRST: Clean up any raw Google Storage URLs that might be showing
+    let cleanedContent = content;
+    
+    // Replace raw Google Storage URLs with clean text
+    const googleStorageUrlRegex = /https:\/\/storage\.googleapis\.com\/[^\s\)]+/gi;
+    cleanedContent = cleanedContent.replace(googleStorageUrlRegex, (match) => {
+      logger.debug('🧹 Cleaning up raw Google Storage URL', { url: match.substring(0, 50) + '...' });
+      return '[Document reference - Preview unavailable]';
+    });
+    
+    // Replace any other long URLs that might be showing
+    const longUrlRegex = /https?:\/\/[^\s\)]{50,}/gi;
+    cleanedContent = cleanedContent.replace(longUrlRegex, (match) => {
+      logger.debug('🧹 Cleaning up long URL', { url: match.substring(0, 50) + '...' });
+      return '[Document reference - Preview unavailable]';
+    });
+    
     // Extract references directly from the current content
-    const currentReferences = extractReferences(content);
+    const currentReferences = extractReferences(cleanedContent);
     logger.debug('🔗 References extracted from current content', { count: currentReferences.length });
     
-    const references = detectPageReferences(content);
+    const references = detectPageReferences(cleanedContent);
     
     // Enhanced debug logging
     logger.debug('🎯 Detected PDF references', { 
@@ -660,8 +604,8 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     });
     
     if (references.length === 0) {
-      logger.debug('❌ No PDF references detected, rendering normally');
-      // If no references, render normally
+      logger.debug('❌ No PDF references detected, rendering cleaned content');
+      // If no references, render the cleaned content
       return (
         <ReactMarkdown
           components={{
@@ -672,7 +616,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
             ),
           }}
         >
-          {content}
+          {cleanedContent}
         </ReactMarkdown>
       );
     }
@@ -680,7 +624,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     logger.debug('✅ Found PDF references, processing message...');
     
     // If we have references, process the message
-    let processedContent = content;
+    let processedContent = cleanedContent;
     // Process in reverse order to not affect indices
     for (let i = references.length - 1; i >= 0; i--) {
       const ref = references[i];
@@ -689,7 +633,17 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
         confidence: ref.confidence 
       });
       
-      const matchingFile = findMatchingPDFFile(ref, sortedFiles, currentReferences);
+      // Enhanced error handling for file matching
+      let matchingFile = null;
+      try {
+        matchingFile = findMatchingPDFFile(ref, sortedFiles, currentReferences);
+      } catch (error) {
+        logger.error('Error finding matching PDF file', { 
+          error: error instanceof Error ? error.message : String(error),
+          reference: ref.fullMatch 
+        });
+      }
+      
       logger.debug(`📋 Matching file for reference`, { 
         fileName: matchingFile?.name || 'None found',
         confidence: ref.confidence
@@ -699,8 +653,17 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
         const beforeRef = processedContent.substring(0, ref.matchIndex);
         const afterRef = processedContent.substring(ref.matchIndex + ref.fullMatch.length);
         const pdfUrl = matchingFile.signed_url; 
+        
         if (!pdfUrl) {
           logger.error("❌ Error: matchingFile.signed_url is missing for file:", matchingFile.name);
+          // Create a fallback reference without URL
+          const fileNameOnly = matchingFile.name.split(/[\\/]/).pop() || matchingFile.name;
+          const cleanFileName = fileNameOnly.replace('_compressed.pdf', '').replace('.pdf', '');
+          const displayText = `${cleanFileName}, pp. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''} (Preview unavailable)`;
+          
+          const fallbackSpan = `<span class="text-gray-500 dark:text-gray-400 italic">${displayText}</span>`;
+          processedContent = `${beforeRef}${fallbackSpan}${afterRef}`;
+          logger.debug(`⚠️ Created fallback reference for ${fileNameOnly} (no signed URL)`);
         } else {
           const fileNameOnly = matchingFile.name.split(/[\\/]/).pop() || matchingFile.name;
           
@@ -717,6 +680,15 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           match: ref.fullMatch,
           confidence: ref.confidence 
         });
+        
+        // Create a generic reference when no file is found
+        const beforeRef = processedContent.substring(0, ref.matchIndex);
+        const afterRef = processedContent.substring(ref.matchIndex + ref.fullMatch.length);
+        const displayText = `Document reference: ${ref.fullMatch} (File not available)`;
+        
+        const fallbackSpan = `<span class="text-gray-500 dark:text-gray-400 italic">${displayText}</span>`;
+        processedContent = `${beforeRef}${fallbackSpan}${afterRef}`;
+        logger.debug(`⚠️ Created fallback reference for unmatched citation: ${ref.fullMatch}`);
       }
     }
     
@@ -758,13 +730,25 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                   onClick={(e) => {
                     e.preventDefault();
                     logger.debug('🚀 Opening PDF modal', { pdfUrlFromLink, fileNameForModal, startPage, endPage, searchText });
-                    handleOpenPdfModal(
-                      pdfUrlFromLink, 
-                      fileNameForModal, 
-                      startPage, 
-                      endPage,
-                      searchText
-                    );
+                    
+                    // Enhanced error handling for PDF modal opening
+                    try {
+                      handleOpenPdfModal(
+                        pdfUrlFromLink, 
+                        fileNameForModal, 
+                        startPage, 
+                        endPage,
+                        searchText
+                      );
+                    } catch (error) {
+                      logger.error('Error opening PDF modal', { 
+                        error: error instanceof Error ? error.message : String(error),
+                        fileNameForModal,
+                        pdfUrlFromLink: pdfUrlFromLink.substring(0, 100) + '...'
+                      });
+                      // Show user-friendly error message
+                      alert('Unable to open PDF preview. Please try again or check the console for details.');
+                    }
                   }}
                   title={`View ${fileNameForModal.replace('_compressed.pdf', '').replace('.pdf', '')} (pages ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})`}
                   className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline inline-flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-700 shadow-sm transition-colors duration-200"
@@ -775,7 +759,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                     viewBox="0 0 20 20"
                     xmlns="http://www.w3.org/2000/svg"
                   >
-                    <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 005.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
+                    <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
                   </svg>
                   <span className="truncate max-w-[200px] font-medium">{refText}</span>
                 </a>
@@ -786,6 +770,13 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                 🔗 {props.children}
               </a>
             );
+          },
+          // Handle fallback spans for unavailable references
+          span: ({ node, className, ...props }) => {
+            if (className?.includes('text-gray-500')) {
+              return <span {...props} className={className} />;
+            }
+            return <span {...props} />;
           },
         }}
       >
@@ -825,10 +816,10 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
             
             <div className="flex flex-col gap-4">
               <div className="w-full">
-                <div id="messages-container" className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg mb-4 h-[calc(100vh-300px)] overflow-y-auto overflow-x-hidden">
+                <div id="messages-container" className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg mb-4 h-[calc(100vh-300px)] overflow-y-auto overflow-x-hidden min-w-0 break-long-words">
                   {messages.map((message, index) => (
-                    <div key={index} className={`mb-2 flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`flex items-start ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <div key={index} className={`mb-2 flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} min-w-0`}>
+                      <div className={`flex items-start ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'} max-w-full min-w-0`}>
                         <div className={`${message.role === 'user' ? 'ml-2' : 'mr-2'}`}>
                           {message.role === 'user' ? (
                             <span className="text-2xl">👤</span>
@@ -844,7 +835,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                         </div>
                         <span className={`inline-block p-2 rounded-lg ${
                           message.role === 'user' ? 'bg-indigo-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                        } max-w-[80%] break-words`}>
+                        } max-w-[80%] sm:max-w-[70%] md:max-w-[60%] break-words overflow-wrap-anywhere word-break-break-word min-w-0 whitespace-pre-wrap`}>
                           {renderMessageContent(message.content, message.role === 'assistant', message.id)}
                           {message.references && showCitations && (
                             <div className="mt-2">

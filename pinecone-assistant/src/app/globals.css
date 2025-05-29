@@ -30,4 +30,27 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+  
+  /* Enhanced text wrapping utilities */
+  .overflow-wrap-anywhere {
+    overflow-wrap: anywhere;
+  }
+  
+  .word-break-break-word {
+    word-break: break-word;
+  }
+  
+  /* Ensure long content wraps properly */
+  .break-long-words {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    hyphens: auto;
+  }
+  
+  /* For code and technical content */
+  .wrap-technical {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
 }

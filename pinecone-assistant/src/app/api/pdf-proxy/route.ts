@@ -6,42 +6,106 @@ export async function GET(request: NextRequest) {
   const pdfUrl = searchParams.get('url');
 
   if (!pdfUrl) {
-    return NextResponse.json({ error: 'Missing PDF URL parameter' }, { status: 400 });
+    logger.error('PDF proxy called without URL parameter');
+    return NextResponse.json({ 
+      error: 'Missing PDF URL parameter',
+      details: 'The "url" query parameter is required'
+    }, { status: 400 });
   }
 
   try {
-    // Decode the URL
+    // Decode the URL and validate it
     const decodedUrl = decodeURIComponent(pdfUrl);
     
-    logger.info('Proxying PDF request', { url: decodedUrl.substring(0, 100) + '...' });
+    // Validate URL format
+    let urlObj;
+    try {
+      urlObj = new URL(decodedUrl);
+    } catch (urlError) {
+      logger.error('Invalid URL format provided to PDF proxy', { 
+        originalUrl: pdfUrl,
+        decodedUrl,
+        error: urlError instanceof Error ? urlError.message : String(urlError)
+      });
+      return NextResponse.json({ 
+        error: 'Invalid URL format',
+        details: `The provided URL "${decodedUrl}" is not a valid URL`,
+        originalUrl: pdfUrl
+      }, { status: 400 });
+    }
+    
+    logger.info('Proxying PDF request', { 
+      url: decodedUrl.substring(0, 100) + '...',
+      host: urlObj.hostname,
+      protocol: urlObj.protocol
+    });
 
-    // Fetch the PDF from the original URL
+    // Fetch the PDF from the original URL with enhanced headers
     const response = await fetch(decodedUrl, {
       method: 'GET',
       headers: {
         'User-Agent': 'Forklift-Assistant-PDF-Proxy/1.0',
         'Accept': 'application/pdf,*/*',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
       },
     });
 
     if (!response.ok) {
-      logger.error('Failed to fetch PDF', { 
-        status: response.status, 
+      const errorDetails = {
+        status: response.status,
         statusText: response.statusText,
+        url: decodedUrl.substring(0, 100) + '...',
+        headers: Object.fromEntries(response.headers.entries())
+      };
+      
+      logger.error('Failed to fetch PDF from source', errorDetails);
+      
+      // Provide specific error messages based on status code
+      let userMessage = `Failed to fetch PDF: ${response.status} ${response.statusText}`;
+      if (response.status === 403) {
+        userMessage = 'Access denied to PDF file. The signed URL may have expired or permissions are insufficient.';
+      } else if (response.status === 404) {
+        userMessage = 'PDF file not found. The document may have been moved or deleted.';
+      } else if (response.status === 401) {
+        userMessage = 'Authentication required to access PDF file.';
+      }
+      
+      return NextResponse.json({
+        error: userMessage,
+        details: errorDetails,
+        troubleshooting: {
+          '403_forbidden': 'Try refreshing the page to get a new signed URL',
+          '404_not_found': 'Verify the file still exists in your Pinecone assistant',
+          '401_unauthorized': 'Check your Pinecone API credentials'
+        }
+      }, { status: response.status });
+    }
+
+    // Validate content type
+    const contentType = response.headers.get('content-type');
+    if (contentType && !contentType.includes('application/pdf') && !contentType.includes('application/octet-stream')) {
+      logger.warn('Response does not appear to be a PDF', { 
+        contentType,
         url: decodedUrl.substring(0, 100) + '...'
       });
-      return NextResponse.json(
-        { error: `Failed to fetch PDF: ${response.status} ${response.statusText}` },
-        { status: response.status }
-      );
     }
 
     // Get the PDF content
     const pdfBuffer = await response.arrayBuffer();
     
+    if (pdfBuffer.byteLength === 0) {
+      logger.error('Received empty PDF response');
+      return NextResponse.json({
+        error: 'Empty PDF file received',
+        details: 'The PDF file appears to be empty or corrupted'
+      }, { status: 502 });
+    }
+    
     logger.info('PDF fetched successfully', { 
       size: pdfBuffer.byteLength,
-      contentType: response.headers.get('content-type')
+      contentType: response.headers.get('content-type'),
+      url: decodedUrl.substring(0, 100) + '...'
     });
 
     // Return the PDF with proper headers
@@ -54,19 +118,30 @@ export async function GET(request: NextRequest) {
         'Access-Control-Allow-Methods': 'GET',
         'Access-Control-Allow-Headers': 'Content-Type',
         'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
+        'X-PDF-Proxy': 'Forklift-Assistant',
+        'X-Original-URL': decodedUrl.substring(0, 200), // Include original URL for debugging
       },
     });
 
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    
     logger.error('Error proxying PDF', { 
-      error: error instanceof Error ? error.message : String(error),
-      url: pdfUrl.substring(0, 100) + '...'
+      error: errorMessage,
+      url: pdfUrl.substring(0, 100) + '...',
+      stack: error instanceof Error ? error.stack : undefined
     });
     
-    return NextResponse.json(
-      { error: 'Failed to proxy PDF request' },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      error: 'Failed to proxy PDF request',
+      details: errorMessage,
+      originalUrl: pdfUrl,
+      troubleshooting: {
+        network_error: 'Check your internet connection and try again',
+        timeout_error: 'The PDF file may be too large or the server is slow',
+        cors_error: 'The PDF source may not allow cross-origin requests'
+      }
+    }, { status: 500 });
   }
 }
 

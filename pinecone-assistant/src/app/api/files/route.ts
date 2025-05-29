@@ -15,9 +15,20 @@ export async function GET() {
     }, { status: 400 });
   }
 
+  // Check for required environment variables
+  const baseUrl = process.env.PINECONE_ASSISTANT_URL;
+  if (!baseUrl) {
+    logger.error('Missing PINECONE_ASSISTANT_URL environment variable');
+    return NextResponse.json({
+      status: "error",
+      message: "PINECONE_ASSISTANT_URL environment variable is required.",
+      files: []
+    }, { status: 500 });
+  }
+
   try {
     const response = await apiClient.request<any>(
-      `https://prod-1-data.ke.pinecone.io/assistant/files/${assistantName}`,
+      `${baseUrl}/assistant/files/${assistantName}`,
       {
         method: 'GET',
         headers: {

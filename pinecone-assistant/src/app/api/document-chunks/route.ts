@@ -17,6 +17,17 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Check for required environment variables
+    const baseUrl = process.env.PINECONE_ASSISTANT_URL;
+    if (!baseUrl) {
+      logger.error('Missing PINECONE_ASSISTANT_URL environment variable');
+      return NextResponse.json({
+        status: "error",
+        message: "PINECONE_ASSISTANT_URL environment variable is required.",
+        chunks: []
+      }, { status: 500 });
+    }
+
     const body = await request.json();
     const { fileName, startPage, endPage, searchQuery } = body;
 
@@ -47,7 +58,7 @@ export async function POST(request: NextRequest) {
 
     // Query Pinecone assistant for relevant chunks with caching
     const response = await apiClient.request<any>(
-      `https://prod-1-data.ke.pinecone.io/assistant/chat/${assistantName}/query`,
+      `${baseUrl}/assistant/chat/${assistantName}/query`,
       {
         method: 'POST',
         headers: {
