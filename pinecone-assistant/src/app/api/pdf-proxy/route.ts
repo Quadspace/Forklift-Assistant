@@ -20,16 +20,33 @@ export async function GET(request: NextRequest) {
     
     // Handle relative URLs by converting to absolute URLs
     if (decodedUrl.startsWith('/api/files/')) {
-      const baseUrl = process.env.VERCEL_URL 
-        ? `https://${process.env.VERCEL_URL}` 
-        : process.env.NODE_ENV === 'production'
-        ? 'https://your-domain.com' // Replace with your actual domain
-        : 'http://localhost:3000'; // FIX PORT - Next.js default is 3000
+      // FIXED: Use request headers to dynamically detect the correct base URL
+      const host = request.headers.get('host');
+      const protocol = request.headers.get('x-forwarded-proto') || 
+                      (request.url.startsWith('https') ? 'https' : 'http');
+      
+      let baseUrl;
+      
+      if (process.env.VERCEL_URL) {
+        // Vercel deployment
+        baseUrl = `https://${process.env.VERCEL_URL}`;
+      } else if (host) {
+        // Use the actual host from the request (works for any deployment)
+        baseUrl = `${protocol}://${host}`;
+      } else {
+        // Fallback for development
+        baseUrl = process.env.NODE_ENV === 'production'
+          ? 'https://localhost' // This should never be reached in production
+          : 'http://localhost:3000';
+      }
       
       decodedUrl = `${baseUrl}${decodedUrl}`;
       logger.info('Converted relative URL to absolute', { 
         original: pdfUrl,
-        converted: decodedUrl.substring(0, 100) + '...'
+        converted: decodedUrl.substring(0, 100) + '...',
+        host,
+        protocol,
+        baseUrl
       });
     }
     

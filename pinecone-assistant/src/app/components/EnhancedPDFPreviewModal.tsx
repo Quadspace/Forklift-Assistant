@@ -4,6 +4,15 @@ import { useEffect, useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { processPdfUrl, ensurePdfUrlWorks } from '../utils/pdfUtils';
 import { logger } from '../utils/logger';
+import { 
+  parsePageNumbers, 
+  extractPageFromReference, 
+  formatPageRange, 
+  getOptimalStartPage, 
+  smoothScrollToPage,
+  parseReferenceContext,
+  PageRange 
+} from '../utils/pageNavigationUtils';
 
 // Dynamically import react-pdf components with no SSR
 const PDFDocument = dynamic(() => import('react-pdf').then(mod => ({ default: mod.Document })), { ssr: false });
@@ -89,6 +98,8 @@ export default function EnhancedPDFPreviewModal({
   const [showFullDocument, setShowFullDocument] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'preview' | 'chunks' | 'debug'>('preview');
   const [processedPdfUrl, setProcessedPdfUrl] = useState<string>('');
+  const [parsedPageRange, setParsedPageRange] = useState<PageRange | null>(null);
+  const [autoNavigated, setAutoNavigated] = useState<boolean>(false);
   const pageCanvasRef = useRef<HTMLDivElement>(null);
 
   // Log props when the component receives them
@@ -101,6 +112,20 @@ export default function EnhancedPDFPreviewModal({
       endPage,
       searchText
     });
+
+    // Parse page information from search text if available
+    if (searchText) {
+      const context = parseReferenceContext(searchText);
+      setParsedPageRange(context.pageRange);
+      
+      if (context.pageRange) {
+        logger.info('Parsed page range from search text:', {
+          searchText,
+          pageRange: context.pageRange,
+          searchTerms: context.searchTerms
+        });
+      }
+    }
   }, [isOpen, pdfUrl, fileName, startPage, endPage, searchText]);
 
   // Process PDF URL when it changes
@@ -137,8 +162,21 @@ export default function EnhancedPDFPreviewModal({
   useEffect(() => {
     // Reset state when modal opens or PDF changes
     if (isOpen) {
-      logger.info(`Modal opened, setting current page to ${startPage || 1}`);
-      setCurrentPage(startPage || 1);
+      // Determine the optimal start page
+      let optimalStartPage = startPage || 1;
+      
+      // If we have parsed page range from search text, use that
+      if (parsedPageRange && parsedPageRange.confidence > 0.7) {
+        optimalStartPage = parsedPageRange.startPage;
+        logger.info('Using parsed page range for navigation:', {
+          originalStartPage: startPage,
+          parsedStartPage: optimalStartPage,
+          confidence: parsedPageRange.confidence
+        });
+      }
+
+      logger.info(`Modal opened, setting current page to ${optimalStartPage}`);
+      setCurrentPage(optimalStartPage);
       setError(null);
       setLoading(true);
       setHighlightAreas([]);
@@ -146,6 +184,7 @@ export default function EnhancedPDFPreviewModal({
       setChunksError(null);
       setShowFullDocument(false);
       setActiveTab('preview');
+      setAutoNavigated(false);
       
       if (!pdfUrl) {
         setError('No PDF URL provided');
@@ -155,7 +194,26 @@ export default function EnhancedPDFPreviewModal({
         fetchDocumentChunks();
       }
     }
-  }, [isOpen, startPage, pdfUrl, fileName]);
+  }, [isOpen, startPage, pdfUrl, fileName, parsedPageRange]);
+
+  // Auto-navigate to the correct page once PDF is loaded
+  useEffect(() => {
+    if (numPages && !autoNavigated && parsedPageRange) {
+      const optimalPage = getOptimalStartPage(parsedPageRange, numPages);
+      
+      if (optimalPage !== currentPage && optimalPage <= numPages) {
+        logger.info('Auto-navigating to optimal page after PDF load:', {
+          currentPage,
+          optimalPage,
+          totalPages: numPages,
+          confidence: parsedPageRange.confidence
+        });
+        
+        smoothScrollToPage(optimalPage, setCurrentPage, 500);
+        setAutoNavigated(true);
+      }
+    }
+  }, [numPages, autoNavigated, parsedPageRange, currentPage]);
 
   const fetchDocumentChunks = async () => {
     if (!fileName) return;
@@ -164,6 +222,10 @@ export default function EnhancedPDFPreviewModal({
     setChunksError(null);
     
     try {
+      // Use parsed page range if available and more specific
+      const effectiveStartPage = parsedPageRange?.startPage || startPage;
+      const effectiveEndPage = parsedPageRange?.endPage || endPage;
+      
       const response = await fetch('/api/document-chunks', {
         method: 'POST',
         headers: {
@@ -171,8 +233,8 @@ export default function EnhancedPDFPreviewModal({
         },
         body: JSON.stringify({
           fileName: fileName,
-          startPage: startPage,
-          endPage: endPage,
+          startPage: effectiveStartPage,
+          endPage: effectiveEndPage,
           searchQuery: searchText
         }),
       });
@@ -181,7 +243,7 @@ export default function EnhancedPDFPreviewModal({
       
       if (data.status === 'success') {
         setDocumentChunks(data.chunks);
-        logger.info(`Loaded ${data.chunks.length} document chunks`);
+        logger.info(`Loaded ${data.chunks.length} document chunks for pages ${effectiveStartPage}-${effectiveEndPage || effectiveStartPage}`);
       } else {
         setChunksError(data.message || 'Failed to load document chunks');
       }
@@ -198,34 +260,37 @@ export default function EnhancedPDFPreviewModal({
     setNumPages(loadInfo.numPages);
     setPdfDocument(loadInfo._pdfInfo.pdfDocument);
     setLoading(false);
+    
+    // Validate current page against total pages
+    if (currentPage > loadInfo.numPages) {
+      logger.warn('Current page exceeds total pages, adjusting:', {
+        currentPage,
+        totalPages: loadInfo.numPages
+      });
+      setCurrentPage(Math.min(currentPage, loadInfo.numPages));
+    }
   };
 
   function onDocumentLoadError(err: Error) {
-    logger.error('Error loading PDF:', err);
-    logger.error('PDF URL that failed:', processedPdfUrl);
-    logger.error('Original PDF URL:', pdfUrl);
-    
-    // Provide more specific error messages
-    let errorMessage = 'Failed to load PDF document.';
-    
-    if (err.message.includes('CORS')) {
-      errorMessage = 'PDF blocked by CORS policy. Trying alternative loading method...';
-      // Try to reload with proxy
-      if (!processedPdfUrl.includes('/api/pdf-proxy')) {
-        logger.info('Attempting to load PDF through proxy...');
-        setProcessedPdfUrl(`/api/pdf-proxy?url=${encodeURIComponent(pdfUrl)}`);
-        return; // Don't set error yet, let proxy attempt work
-      }
-    } else if (err.message.includes('404')) {
-      errorMessage = 'PDF file not found. The document may have been moved or deleted.';
-    } else if (err.message.includes('403')) {
-      errorMessage = 'Access denied to PDF file. The signed URL may have expired.';
-    } else if (err.message.includes('network')) {
-      errorMessage = 'Network error loading PDF. Please check your connection and try again.';
-    }
-    
-    setError(errorMessage);
+    logger.error('PDF document load error:', err);
+    setError(`Failed to load PDF document: ${err.message}`);
     setLoading(false);
+    
+    // Provide specific error guidance
+    if (err.message.includes('CORS')) {
+      setError('PDF loading blocked by CORS policy. Trying alternative loading method...');
+      // Try to reload with proxy
+      setTimeout(() => {
+        const proxyUrl = `/api/pdf-proxy?url=${encodeURIComponent(pdfUrl)}`;
+        setProcessedPdfUrl(proxyUrl);
+        setError(null);
+        setLoading(true);
+      }, 2000);
+    } else if (err.message.includes('404') || err.message.includes('Not Found')) {
+      setError('PDF file not found. The document may have been moved or deleted.');
+    } else if (err.message.includes('403') || err.message.includes('Forbidden')) {
+      setError('Access denied to PDF file. The signed URL may have expired.');
+    }
   }
 
   function handlePreviousPage() {
@@ -247,7 +312,23 @@ export default function EnhancedPDFPreviewModal({
 
   function handleReturnToPageRange() {
     setShowFullDocument(false);
-    setCurrentPage(startPage || 1);
+    const returnPage = parsedPageRange?.startPage || startPage || 1;
+    setCurrentPage(returnPage);
+    logger.info('Returning to page range:', { returnPage, parsedPageRange });
+  }
+
+  // Jump to a specific page (used by chunk navigation)
+  function jumpToPage(pageNumber: number) {
+    if (pageNumber >= 1 && (!numPages || pageNumber <= numPages)) {
+      logger.info('Jumping to specific page:', { pageNumber });
+      setCurrentPage(pageNumber);
+      setActiveTab('preview');
+      
+      // Smooth scroll to top of PDF viewer
+      if (pageCanvasRef.current) {
+        pageCanvasRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
   }
 
   // Extract text from the current page and find highlight positions
@@ -311,6 +392,16 @@ export default function EnhancedPDFPreviewModal({
     if (showFullDocument) {
       return `Page ${currentPage} of ${numPages || '?'} (Full Document)`;
     }
+    
+    // Show parsed page range if available
+    if (parsedPageRange) {
+      const rangeText = formatPageRange(parsedPageRange);
+      if (parsedPageRange.endPage && parsedPageRange.endPage > parsedPageRange.startPage) {
+        return `Page ${currentPage} (Referenced: ${rangeText})`;
+      }
+      return `Page ${currentPage} (Referenced: ${rangeText})`;
+    }
+    
     if (endPage && endPage > startPage) {
       return `Page ${currentPage} (Showing range: ${startPage}-${endPage})`;
     }
@@ -320,8 +411,26 @@ export default function EnhancedPDFPreviewModal({
   // Function to check if current page is within the original range
   function isWithinOriginalRange() {
     if (showFullDocument) return true;
+    
+    // Check against parsed page range if available
+    if (parsedPageRange) {
+      if (parsedPageRange.endPage) {
+        return currentPage >= parsedPageRange.startPage && currentPage <= parsedPageRange.endPage;
+      }
+      return currentPage === parsedPageRange.startPage;
+    }
+    
+    // Fall back to original range
     if (!endPage) return currentPage === startPage;
     return currentPage >= startPage && currentPage <= endPage;
+  }
+
+  // Handle direct page input
+  function handlePageInput(pageNumber: string) {
+    const page = parseInt(pageNumber, 10);
+    if (!isNaN(page) && page >= 1 && (!numPages || page <= numPages)) {
+      jumpToPage(page);
+    }
   }
 
   if (!isOpen) return null;
@@ -335,6 +444,17 @@ export default function EnhancedPDFPreviewModal({
             <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 truncate">
               {fileName}
             </h2>
+            
+            {/* Page range indicator in header */}
+            {parsedPageRange && (
+              <div className="text-sm bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
+                Referenced: {formatPageRange(parsedPageRange)}
+                {parsedPageRange.confidence < 0.8 && (
+                  <span className="ml-1 text-xs opacity-75">(low confidence)</span>
+                )}
+              </div>
+            )}
+            
             {!showFullDocument && endPage && endPage > startPage && (
               <button
                 onClick={handleExpandToFullDocument}
@@ -348,7 +468,7 @@ export default function EnhancedPDFPreviewModal({
                 onClick={handleReturnToPageRange}
                 className="text-sm bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 transition-colors"
               >
-                Return to Pages {startPage}-{endPage || startPage}
+                Return to Pages {parsedPageRange?.startPage || startPage}-{parsedPageRange?.endPage || endPage || parsedPageRange?.startPage || startPage}
               </button>
             )}
           </div>
@@ -475,7 +595,14 @@ export default function EnhancedPDFPreviewModal({
                           {/* Page range indicator */}
                           {!isWithinOriginalRange() && (
                             <div className="absolute top-2 left-2 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 px-2 py-1 rounded text-sm">
-                              Outside original range ({startPage}-{endPage || startPage})
+                              Outside referenced range
+                            </div>
+                          )}
+                          
+                          {/* Auto-navigation indicator */}
+                          {autoNavigated && parsedPageRange && (
+                            <div className="absolute top-2 right-2 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded text-sm animate-pulse">
+                              Auto-navigated to {formatPageRange(parsedPageRange)}
                             </div>
                           )}
                         </div>
@@ -510,7 +637,8 @@ export default function EnhancedPDFPreviewModal({
               {!chunksLoading && !chunksError && documentChunks.length > 0 && (
                 <div className="space-y-4">
                   <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                    Found {documentChunks.length} relevant content sections for pages {startPage}-{endPage || startPage}
+                    Found {documentChunks.length} relevant content sections
+                    {parsedPageRange ? ` for ${formatPageRange(parsedPageRange)}` : ` for pages ${startPage}-${endPage || startPage}`}
                     {searchText && ` matching "${searchText}"`}
                   </div>
                   
@@ -526,10 +654,7 @@ export default function EnhancedPDFPreviewModal({
                         </div>
                         {chunk.page && (
                           <button
-                            onClick={() => {
-                              setCurrentPage(chunk.page!);
-                              setActiveTab('preview');
-                            }}
+                            onClick={() => jumpToPage(chunk.page!)}
                             className="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition-colors"
                           >
                             View Page
@@ -549,6 +674,16 @@ export default function EnhancedPDFPreviewModal({
             <div className="h-full overflow-auto p-4">
               <div className="space-y-4 text-sm">
                 <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">PDF Loading Debug Info</h3>
+                
+                <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                  <h4 className="font-medium text-gray-800 dark:text-gray-200 mb-2">Page Navigation</h4>
+                  <div className="space-y-1 text-xs">
+                    <div><span className="font-medium">Parsed Page Range:</span> {parsedPageRange ? formatPageRange(parsedPageRange) : 'None'}</div>
+                    <div><span className="font-medium">Confidence:</span> {parsedPageRange?.confidence ? (parsedPageRange.confidence * 100).toFixed(1) + '%' : 'N/A'}</div>
+                    <div><span className="font-medium">Auto-navigated:</span> {autoNavigated ? 'Yes' : 'No'}</div>
+                    <div><span className="font-medium">Search Text:</span> {searchText || 'None'}</div>
+                  </div>
+                </div>
                 
                 <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
                   <h4 className="font-medium text-gray-800 dark:text-gray-200 mb-2">URLs</h4>
@@ -613,7 +748,9 @@ export default function EnhancedPDFPreviewModal({
                           loading,
                           error,
                           currentPage,
-                          numPages
+                          numPages,
+                          parsedPageRange,
+                          autoNavigated
                         });
                       }}
                       className="bg-gray-500 text-white px-3 py-1 rounded text-xs hover:bg-gray-600 ml-2"
@@ -627,35 +764,66 @@ export default function EnhancedPDFPreviewModal({
           )}
         </div>
 
-        {/* Footer with navigation - only show for PDF preview tab */}
+        {/* Enhanced Footer with navigation - only show for PDF preview tab */}
         {activeTab === 'preview' && (
-          <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
-            <div className="text-gray-700 dark:text-gray-300">
-              {getPageRangeText()}
-            </div>
-            <div className="flex space-x-2">
-              <button
-                onClick={handlePreviousPage}
-                disabled={currentPage <= 1}
-                className={`px-3 py-1 rounded ${
-                  currentPage <= 1
-                    ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed'
-                    : 'bg-indigo-500 text-white hover:bg-indigo-600'
-                }`}
-              >
-                Previous
-              </button>
-              <button
-                onClick={handleNextPage}
-                disabled={numPages !== null && currentPage >= numPages}
-                className={`px-3 py-1 rounded ${
-                  numPages !== null && currentPage >= numPages
-                    ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed'
-                    : 'bg-indigo-500 text-white hover:bg-indigo-600'
-                }`}
-              >
-                Next
-              </button>
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center space-x-4">
+                <div className="text-gray-700 dark:text-gray-300">
+                  {getPageRangeText()}
+                </div>
+                
+                {/* Quick page jump input */}
+                {numPages && numPages > 5 && (
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Go to:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max={numPages}
+                      value={currentPage}
+                      onChange={(e) => handlePageInput(e.target.value)}
+                      className="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    />
+                    <span className="text-sm text-gray-500 dark:text-gray-400">of {numPages}</span>
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex space-x-2">
+                {/* Jump to referenced page button */}
+                {parsedPageRange && currentPage !== parsedPageRange.startPage && (
+                  <button
+                    onClick={() => jumpToPage(parsedPageRange.startPage)}
+                    className="text-sm bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600 transition-colors"
+                  >
+                    Go to Referenced Page
+                  </button>
+                )}
+                
+                <button
+                  onClick={handlePreviousPage}
+                  disabled={currentPage <= 1}
+                  className={`px-3 py-1 rounded ${
+                    currentPage <= 1
+                      ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed'
+                      : 'bg-indigo-500 text-white hover:bg-indigo-600'
+                  }`}
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={handleNextPage}
+                  disabled={numPages !== null && currentPage >= numPages}
+                  className={`px-3 py-1 rounded ${
+                    numPages !== null && currentPage >= numPages
+                      ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed'
+                      : 'bg-indigo-500 text-white hover:bg-indigo-600'
+                  }`}
+                >
+                  Next
+                </button>
+              </div>
             </div>
           </div>
         )}
