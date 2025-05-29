@@ -26,7 +26,7 @@ export async function chat(messages: Message[]) {
         model: 'gpt-4o'
       }),
       headers: {
-        Authorization: `Bearer ${process.env.PINECONE_API_KEY}`,
+        'Api-Key': process.env.PINECONE_API_KEY!,
         'X-Project-Id': process.env.PINECONE_ASSISTANT_ID!,
         'X-Pinecone-API-Version': '2025-04',
         'User-Agent': 'Forklift-Assistant/1.0',
