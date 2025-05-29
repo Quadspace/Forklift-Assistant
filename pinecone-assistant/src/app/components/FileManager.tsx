@@ -67,6 +67,19 @@ export default function FileManager({ onFilesChange }: FileManagerProps) {
       const data = await response.json();
       
       if (data.status === 'success') {
+        console.log('File upload response:', {
+          status: data.file.status,
+          percent_done: data.file.percent_done,
+          error_message: data.file.error_message,
+          file_id: data.file.id,
+          name: data.file.name
+        });
+        
+        // Start monitoring file processing status
+        if (data.file.status === 'Processing') {
+          monitorFileProcessing(data.file.id, data.file.name);
+        }
+        
         await fetchFiles(); // Refresh file list
       } else {
         setError(data.message || 'Failed to upload file');
@@ -77,6 +90,43 @@ export default function FileManager({ onFilesChange }: FileManagerProps) {
     } finally {
       setUploading(false);
     }
+  };
+
+  // Monitor file processing status
+  const monitorFileProcessing = async (fileId: string, fileName: string) => {
+    const checkStatus = async () => {
+      try {
+        const response = await fetch(`/api/files/${fileId}`);
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+          const file = data.file;
+          console.log(`File ${fileName} status check:`, {
+            status: file.status,
+            percent_done: file.percent_done,
+            error_message: file.error_message
+          });
+          
+          if (file.status === 'Available') {
+            console.log(`✅ File ${fileName} is now Available and ready for citations!`);
+            await fetchFiles(); // Refresh to show updated status
+            return;
+          } else if (file.status === 'ProcessingFailed') {
+            console.error(`❌ File ${fileName} processing failed:`, file.error_message);
+            setError(`File processing failed: ${file.error_message || 'Unknown error'}`);
+            return;
+          } else if (file.status === 'Processing') {
+            // Continue monitoring
+            setTimeout(checkStatus, 2000); // Check every 2 seconds
+          }
+        }
+      } catch (error) {
+        console.error('Error checking file status:', error);
+      }
+    };
+    
+    // Start monitoring after a brief delay
+    setTimeout(checkStatus, 1000);
   };
 
   // Delete file
@@ -220,43 +270,66 @@ export default function FileManager({ onFilesChange }: FileManagerProps) {
             {loading ? 'Loading files...' : 'No files uploaded yet'}
           </p>
         ) : (
-          files.map((file) => (
-            <div
-              key={file.id}
-              className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-            >
-              <div className="flex-1">
-                <div className="flex items-center space-x-3">
-                  <span className="text-2xl">📄</span>
+          <>
+            {/* Status Summary */}
+            <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div className="text-sm text-blue-800 dark:text-blue-200">
+                <div className="font-medium mb-1">📊 File Status Summary</div>
+                <div className="grid grid-cols-3 gap-4 text-xs">
                   <div>
-                    <h3 className="font-medium text-gray-900 dark:text-white">{file.name}</h3>
-                    <div className="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
-                      <span>{formatFileSize(file.size)}</span>
-                      <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(file.status)}`}>
-                        {file.status}
-                      </span>
-                      <span>{new Date(file.created_at).toLocaleDateString()}</span>
-                    </div>
+                    <span className="font-medium">Available:</span> {files.filter(f => f.status === 'Available').length}
+                    <div className="text-green-600 dark:text-green-400">✅ Ready for citations</div>
+                  </div>
+                  <div>
+                    <span className="font-medium">Processing:</span> {files.filter(f => f.status === 'Processing').length}
+                    <div className="text-yellow-600 dark:text-yellow-400">⏳ Still processing</div>
+                  </div>
+                  <div>
+                    <span className="font-medium">Failed:</span> {files.filter(f => f.status === 'ProcessingFailed').length}
+                    <div className="text-red-600 dark:text-red-400">❌ Need re-upload</div>
                   </div>
                 </div>
               </div>
-              
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => setSelectedFile(file)}
-                  className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-500"
-                >
-                  Details
-                </button>
-                <button
-                  onClick={() => deleteFile(file.id)}
-                  className="px-3 py-1 text-sm bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded hover:bg-red-200 dark:hover:bg-red-900/40"
-                >
-                  Delete
-                </button>
-              </div>
             </div>
-          ))
+            
+            {files.map((file) => (
+              <div
+                key={file.id}
+                className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center space-x-3">
+                    <span className="text-2xl">📄</span>
+                    <div>
+                      <h3 className="font-medium text-gray-900 dark:text-white">{file.name}</h3>
+                      <div className="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
+                        <span>{formatFileSize(file.size)}</span>
+                        <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(file.status)}`}>
+                          {file.status}
+                        </span>
+                        <span>{new Date(file.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setSelectedFile(file)}
+                    className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-500"
+                  >
+                    Details
+                  </button>
+                  <button
+                    onClick={() => deleteFile(file.id)}
+                    className="px-3 py-1 text-sm bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded hover:bg-red-200 dark:hover:bg-red-900/40"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </>
         )}
       </div>
 

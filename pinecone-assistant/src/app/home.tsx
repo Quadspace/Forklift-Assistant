@@ -191,7 +191,13 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           
           console.log('Raw chunk:', chunk);
           const data = JSON.parse(chunk);
-          console.log('Parsed data:', data);
+          console.log('📡 Stream event:', {
+            type: data.type,
+            has_content: !!data.content,
+            has_citation: !!data.citation,
+            finish_reason: data.finish_reason,
+            timestamp: new Date().toISOString()
+          });
           
           // Handle different message types from Pinecone streaming (as per official docs)
           switch (data.type) {
@@ -217,7 +223,12 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
               // Citation from the assistant - handle structured citation objects
               if (data.citation) {
                 const citation = data.citation;
-                console.log('Received citation:', JSON.stringify(citation, null, 2));
+                console.log('📋 Received citation event:', {
+                  type: 'citation',
+                  position: citation.position,
+                  references_count: citation.references?.length || 0,
+                  full_citation: JSON.stringify(citation, null, 2)
+                });
                 
                 // Handle the structured citation format from Pinecone
                 if (citation.references && citation.references.length > 0) {
@@ -362,7 +373,13 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           
           console.log('Raw chunk:', chunk);
           const data = JSON.parse(chunk);
-          console.log('Parsed data:', data);
+          console.log('📡 Stream event:', {
+            type: data.type,
+            has_content: !!data.content,
+            has_citation: !!data.citation,
+            finish_reason: data.finish_reason,
+            timestamp: new Date().toISOString()
+          });
           
           // Handle different message types from Pinecone streaming (as per official docs)
           switch (data.type) {
@@ -388,7 +405,12 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
               // Citation from the assistant - handle structured citation objects
               if (data.citation) {
                 const citation = data.citation;
-                console.log('Received citation:', JSON.stringify(citation, null, 2));
+                console.log('📋 Received citation event:', {
+                  type: 'citation',
+                  position: citation.position,
+                  references_count: citation.references?.length || 0,
+                  full_citation: JSON.stringify(citation, null, 2)
+                });
                 
                 // Handle the structured citation format from Pinecone
                 if (citation.references && citation.references.length > 0) {
