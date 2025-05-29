@@ -63,45 +63,51 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       });
     }
     
-    // Extract bracket-style citations like [1, pp. 18-25] or [2, pp. 47-59]
-    const bracketCitationRegex = /\[(\d+),?\s*pp?\.\s*[\d-]+\]/gi;
-    while ((match = bracketCitationRegex.exec(content)) !== null) {
-      const citationNumber = match[1];
-      const citationText = match[0]; // Full match like "[1, pp. 18-25]"
-      references.push({ 
-        name: `Citation ${citationNumber}`,
-        url: `#citation-${citationNumber}` // Placeholder URL
-      });
-    }
-    
-    // Extract simple bracket citations like [1] or [2]
-    const simpleBracketRegex = /\[(\d+)\]/gi;
-    while ((match = simpleBracketRegex.exec(content)) !== null) {
-      const citationNumber = match[1];
-      // Only add if we don't already have a more detailed citation for this number
-      if (!references.some(ref => ref.name.includes(`Citation ${citationNumber}`))) {
+    // Extract file names that appear in the text (like "RT 4000 SERIES_compressed.pdf")
+    const fileNameRegex = /\b([A-Za-z0-9_\s-]+\.(?:pdf|doc|docx|txt|md))\b/gi;
+    while ((match = fileNameRegex.exec(content)) !== null) {
+      const fileName = match[1].trim();
+      if (!references.some(ref => ref.name === fileName)) {
         references.push({ 
-          name: `Source ${citationNumber}`,
-          url: `#source-${citationNumber}` // Placeholder URL
+          name: fileName,
+          url: `#file-${fileName.replace(/[^a-zA-Z0-9]/g, '-')}` // Create anchor link
         });
       }
     }
     
-    // Also look for citations in the format: "According to filename.pdf" or "Based on document.pdf"
-    const citationRegex = /(?:according to|based on|from|in|see)\s+([^,\s]+\.(?:pdf|doc|docx|txt|md))/gi;
-    while ((match = citationRegex.exec(content)) !== null) {
-      const fileName = match[1].trim();
-      if (!references.some(ref => ref.name === fileName)) {
-        references.push({ name: fileName });
+    // Extract page references (like "Pages 45, 46, 47, 48, 49, 50, 51")
+    const pageRegex = /Pages?\s+([\d,\s-]+)/gi;
+    while ((match = pageRegex.exec(content)) !== null) {
+      const pageNumbers = match[1].trim();
+      references.push({ 
+        name: `Pages ${pageNumbers}`,
+        url: `#pages-${pageNumbers.replace(/[^0-9]/g, '-')}` // Create anchor link
+      });
+    }
+    
+    // Extract bracket-style citations like [1, pp. 18-25] or [2, pp. 47-59] (fallback)
+    const bracketCitationRegex = /\[(\d+),?\s*pp?\.\s*[\d-]+\]/gi;
+    while ((match = bracketCitationRegex.exec(content)) !== null) {
+      const citationNumber = match[1];
+      const citationText = match[0]; // Full match like "[1, pp. 18-25]"
+      if (!references.some(ref => ref.name.includes(`Citation ${citationNumber}`))) {
+        references.push({ 
+          name: `Citation ${citationNumber}`,
+          url: `#citation-${citationNumber}`
+        });
       }
     }
     
-    // Look for standalone file references
-    const fileNameRegex = /\b([a-zA-Z0-9_-]+\.(?:pdf|doc|docx|txt|md))\b/gi;
-    while ((match = fileNameRegex.exec(content)) !== null) {
-      const fileName = match[1].trim();
-      if (!references.some(ref => ref.name === fileName)) {
-        references.push({ name: fileName });
+    // Extract simple bracket citations like [1] or [2] (fallback)
+    const simpleBracketRegex = /\[(\d+)\]/gi;
+    while ((match = simpleBracketRegex.exec(content)) !== null) {
+      const citationNumber = match[1];
+      // Only add if we don't already have a more detailed citation for this number
+      if (!references.some(ref => ref.name.includes(`Citation ${citationNumber}`) || ref.name.includes(`Source ${citationNumber}`))) {
+        references.push({ 
+          name: `Source ${citationNumber}`,
+          url: `#source-${citationNumber}`
+        });
       }
     }
 
