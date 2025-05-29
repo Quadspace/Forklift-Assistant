@@ -51,7 +51,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     const references: Reference[] = [];
     
     // Extract markdown links with signed URLs: [filename.pdf](https://storage.googleapis.com/...)
-    const markdownLinkRegex = /\[([^\]]+\.pdf)\]\((https?:\/\/[^\)]+)\)/gi;
+    const markdownLinkRegex = /\[([^\]]+\.(?:pdf|doc|docx|txt|md))\]\((https?:\/\/[^\)]+)\)/gi;
     let match;
     
     while ((match = markdownLinkRegex.exec(content)) !== null) {
@@ -63,15 +63,21 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       });
     }
     
-    // Fallback: Extract plain file names if no markdown links found
-    if (references.length === 0) {
-      const fileNameRegex = /([^:\n]+\.[a-zA-Z0-9]+)/g;
-      const fileMatches = content.match(fileNameRegex);
-      
-      if (fileMatches) {
-        fileMatches.forEach(fileName => {
-          references.push({ name: fileName.trim() });
-        });
+    // Also look for citations in the format: "According to filename.pdf" or "Based on document.pdf"
+    const citationRegex = /(?:according to|based on|from|in|see)\s+([^,\s]+\.(?:pdf|doc|docx|txt|md))/gi;
+    while ((match = citationRegex.exec(content)) !== null) {
+      const fileName = match[1].trim();
+      if (!references.some(ref => ref.name === fileName)) {
+        references.push({ name: fileName });
+      }
+    }
+    
+    // Look for standalone file references
+    const fileNameRegex = /\b([a-zA-Z0-9_-]+\.(?:pdf|doc|docx|txt|md))\b/gi;
+    while ((match = fileNameRegex.exec(content)) !== null) {
+      const fileName = match[1].trim();
+      if (!references.some(ref => ref.name === fileName)) {
+        references.push({ name: fileName });
       }
     }
 
@@ -165,6 +171,14 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       const extractedReferences = extractReferences(accumulatedContent);
       setReferencedFiles(extractedReferences);
 
+      // Update the assistant message with the extracted references
+      setMessages(prevMessages => {
+        const updatedMessages = [...prevMessages];
+        const lastMessage = updatedMessages[updatedMessages.length - 1];
+        lastMessage.references = extractedReferences;
+        return updatedMessages;
+      });
+
     } catch (error) {
       console.error('Error in chat:', error);
       setError('An error occurred while chatting.');
@@ -230,6 +244,14 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       // Extract references after the full message is received
       const extractedReferences = extractReferences(accumulatedContent);
       setReferencedFiles(extractedReferences);
+
+      // Update the assistant message with the extracted references
+      setMessages(prevMessages => {
+        const updatedMessages = [...prevMessages];
+        const lastMessage = updatedMessages[updatedMessages.length - 1];
+        lastMessage.references = extractedReferences;
+        return updatedMessages;
+      });
 
     } catch (error) {
       console.error('Error in chat:', error);
