@@ -82,7 +82,8 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     // Simplified initialization - no API calls needed
     setLoading(false);
     setAssistantExists(true);
-    setAssistantName(process.env.NEXT_PUBLIC_ASSISTANT_NAME || 'forklift-maintenance');
+    setAssistantName('forklift-maintenance');
+    setError(''); // Clear any error state
   }, []);
 
   const fetchFiles = async () => {
@@ -95,6 +96,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     setLoading(false);
     setAssistantExists(true);
     setAssistantName('forklift-maintenance');
+    setError(''); // Clear any error state
   };
 
   const handlePromptSelect = (prompt: string) => {
