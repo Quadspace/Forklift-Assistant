@@ -189,7 +189,9 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           // The chunk is already the event data string from the backend
           if (!chunk || typeof chunk !== 'string') continue;
           
+          console.log('Raw chunk:', chunk);
           const data = JSON.parse(chunk);
+          console.log('Parsed data:', data);
           
           // Handle different message types from Pinecone streaming (as per official docs)
           switch (data.type) {
@@ -212,30 +214,64 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
               break;
               
             case 'citation':
-              // Citation from the assistant
+              // Citation from the assistant - handle structured citation objects
               if (data.citation) {
                 const citation = data.citation;
-                const structuredReference = {
-                  name: citation.references?.[0]?.file?.name || `Citation ${citation.position || ''}`,
-                  url: citation.references?.[0]?.file?.signed_url || `#citation-${citation.position || Math.random()}`,
-                  pages: citation.references?.[0]?.pages,
-                  highlight: citation.references?.[0]?.highlight?.content,
-                  position: citation.position
-                };
+                console.log('Received citation:', JSON.stringify(citation, null, 2));
                 
-                // Update the current message with the new citation
-                setMessages(prevMessages => {
-                  const updatedMessages = [...prevMessages];
-                  const lastMessage = updatedMessages[updatedMessages.length - 1];
-                  if (!lastMessage.references) {
-                    lastMessage.references = [];
-                  }
-                  lastMessage.references.push(structuredReference);
-                  return updatedMessages;
-                });
-                
-                // Also update the global referenced files
-                setReferencedFiles(prevFiles => [...prevFiles, structuredReference]);
+                // Handle the structured citation format from Pinecone
+                if (citation.references && citation.references.length > 0) {
+                  citation.references.forEach((reference: any) => {
+                    if (reference.file) {
+                      const structuredReference = {
+                        name: reference.file.name || `Citation ${citation.position || ''}`,
+                        url: reference.file.signed_url || `#citation-${citation.position || Math.random()}`,
+                        pages: reference.pages ? reference.pages.join(', ') : undefined,
+                        highlight: reference.highlight?.content,
+                        position: citation.position,
+                        fileId: reference.file.id,
+                        fileStatus: reference.file.status
+                      };
+                      
+                      // Update the current message with the new citation
+                      setMessages(prevMessages => {
+                        const updatedMessages = [...prevMessages];
+                        const lastMessage = updatedMessages[updatedMessages.length - 1];
+                        if (!lastMessage.references) {
+                          lastMessage.references = [];
+                        }
+                        lastMessage.references.push(structuredReference);
+                        return updatedMessages;
+                      });
+                      
+                      // Also update the global referenced files
+                      setReferencedFiles(prevFiles => [...prevFiles, structuredReference]);
+                    }
+                  });
+                } else {
+                  // Fallback for simpler citation format
+                  const structuredReference = {
+                    name: citation.file?.name || `Citation ${citation.position || ''}`,
+                    url: citation.file?.signed_url || `#citation-${citation.position || Math.random()}`,
+                    pages: citation.pages ? (Array.isArray(citation.pages) ? citation.pages.join(', ') : citation.pages) : undefined,
+                    highlight: citation.highlight?.content,
+                    position: citation.position
+                  };
+                  
+                  // Update the current message with the new citation
+                  setMessages(prevMessages => {
+                    const updatedMessages = [...prevMessages];
+                    const lastMessage = updatedMessages[updatedMessages.length - 1];
+                    if (!lastMessage.references) {
+                      lastMessage.references = [];
+                    }
+                    lastMessage.references.push(structuredReference);
+                    return updatedMessages;
+                  });
+                  
+                  // Also update the global referenced files
+                  setReferencedFiles(prevFiles => [...prevFiles, structuredReference]);
+                }
               }
               break;
               
@@ -308,7 +344,9 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           // The chunk is already the event data string from the backend
           if (!chunk || typeof chunk !== 'string') continue;
           
+          console.log('Raw chunk:', chunk);
           const data = JSON.parse(chunk);
+          console.log('Parsed data:', data);
           
           // Handle different message types from Pinecone streaming (as per official docs)
           switch (data.type) {
@@ -331,30 +369,64 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
               break;
               
             case 'citation':
-              // Citation from the assistant
+              // Citation from the assistant - handle structured citation objects
               if (data.citation) {
                 const citation = data.citation;
-                const structuredReference = {
-                  name: citation.references?.[0]?.file?.name || `Citation ${citation.position || ''}`,
-                  url: citation.references?.[0]?.file?.signed_url || `#citation-${citation.position || Math.random()}`,
-                  pages: citation.references?.[0]?.pages,
-                  highlight: citation.references?.[0]?.highlight?.content,
-                  position: citation.position
-                };
+                console.log('Received citation:', JSON.stringify(citation, null, 2));
                 
-                // Update the current message with the new citation
-                setMessages(prevMessages => {
-                  const updatedMessages = [...prevMessages];
-                  const lastMessage = updatedMessages[updatedMessages.length - 1];
-                  if (!lastMessage.references) {
-                    lastMessage.references = [];
-                  }
-                  lastMessage.references.push(structuredReference);
-                  return updatedMessages;
-                });
-                
-                // Also update the global referenced files
-                setReferencedFiles(prevFiles => [...prevFiles, structuredReference]);
+                // Handle the structured citation format from Pinecone
+                if (citation.references && citation.references.length > 0) {
+                  citation.references.forEach((reference: any) => {
+                    if (reference.file) {
+                      const structuredReference = {
+                        name: reference.file.name || `Citation ${citation.position || ''}`,
+                        url: reference.file.signed_url || `#citation-${citation.position || Math.random()}`,
+                        pages: reference.pages ? reference.pages.join(', ') : undefined,
+                        highlight: reference.highlight?.content,
+                        position: citation.position,
+                        fileId: reference.file.id,
+                        fileStatus: reference.file.status
+                      };
+                      
+                      // Update the current message with the new citation
+                      setMessages(prevMessages => {
+                        const updatedMessages = [...prevMessages];
+                        const lastMessage = updatedMessages[updatedMessages.length - 1];
+                        if (!lastMessage.references) {
+                          lastMessage.references = [];
+                        }
+                        lastMessage.references.push(structuredReference);
+                        return updatedMessages;
+                      });
+                      
+                      // Also update the global referenced files
+                      setReferencedFiles(prevFiles => [...prevFiles, structuredReference]);
+                    }
+                  });
+                } else {
+                  // Fallback for simpler citation format
+                  const structuredReference = {
+                    name: citation.file?.name || `Citation ${citation.position || ''}`,
+                    url: citation.file?.signed_url || `#citation-${citation.position || Math.random()}`,
+                    pages: citation.pages ? (Array.isArray(citation.pages) ? citation.pages.join(', ') : citation.pages) : undefined,
+                    highlight: citation.highlight?.content,
+                    position: citation.position
+                  };
+                  
+                  // Update the current message with the new citation
+                  setMessages(prevMessages => {
+                    const updatedMessages = [...prevMessages];
+                    const lastMessage = updatedMessages[updatedMessages.length - 1];
+                    if (!lastMessage.references) {
+                      lastMessage.references = [];
+                    }
+                    lastMessage.references.push(structuredReference);
+                    return updatedMessages;
+                  });
+                  
+                  // Also update the global referenced files
+                  setReferencedFiles(prevFiles => [...prevFiles, structuredReference]);
+                }
               }
               break;
               
@@ -483,23 +555,63 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                           {message.content}
                         </ReactMarkdown>
                         {message.references && showCitations && (
-                          <div className="mt-2">
-                            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Sources:</div>
-                            <ul className="space-y-1">
+                          <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-600 rounded-lg border-l-4 border-blue-500">
+                            <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center">
+                              <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 4a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zm8 0a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1h-6a1 1 0 01-1-1v-6z" clipRule="evenodd" />
+                              </svg>
+                              Sources ({message.references.length})
+                            </div>
+                            <div className="space-y-2">
                               {message.references.map((ref, i) => (
-                                <li key={i} className="text-sm">
-                                  <a href={ref.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
-                                    🔗 {ref.name}
-                                    {ref.pages && ` (Pages ${ref.pages})`}
-                                  </a>
+                                <div key={i} className="bg-white dark:bg-gray-700 p-2 rounded border">
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex-1">
+                                      <a 
+                                        href={ref.url} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer" 
+                                        className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium hover:underline flex items-center"
+                                      >
+                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                        </svg>
+                                        {ref.name}
+                                      </a>
+                                      <div className="flex items-center space-x-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                        {ref.pages && (
+                                          <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
+                                            Pages: {ref.pages}
+                                          </span>
+                                        )}
+                                        {ref.fileStatus && (
+                                          <span className={`px-2 py-1 rounded text-xs ${
+                                            ref.fileStatus === 'Available' 
+                                              ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                                              : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                                          }`}>
+                                            {ref.fileStatus}
+                                          </span>
+                                        )}
+                                        {ref.position && (
+                                          <span className="text-gray-400">
+                                            Position: {ref.position}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
                                   {ref.highlight && (
-                                    <div className="ml-4 mt-1 text-xs text-gray-500 dark:text-gray-400 italic border-l-2 border-gray-300 pl-2">
-                                      "{ref.highlight}"
+                                    <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border-l-2 border-yellow-400 rounded">
+                                      <div className="text-xs text-yellow-800 dark:text-yellow-200 font-medium mb-1">Highlighted passage:</div>
+                                      <div className="text-sm text-gray-700 dark:text-gray-300 italic">
+                                        "{ref.highlight}"
+                                      </div>
                                     </div>
                                   )}
-                                </li>
+                                </div>
                               ))}
-                            </ul>
+                            </div>
                           </div>
                         )}
                       </span>

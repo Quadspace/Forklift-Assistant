@@ -17,6 +17,8 @@ export interface File {
     pages?: string | number; // Page numbers from Pinecone citations
     highlight?: string; // Highlighted text from Pinecone citations
     position?: number; // Position in the citation array
+    fileId?: string; // File ID from Pinecone
+    fileStatus?: string; // File status from Pinecone
   }
 
   export interface Message {
