@@ -63,6 +63,30 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       });
     }
     
+    // Extract bracket-style citations like [1, pp. 18-25] or [2, pp. 47-59]
+    const bracketCitationRegex = /\[(\d+),?\s*pp?\.\s*[\d-]+\]/gi;
+    while ((match = bracketCitationRegex.exec(content)) !== null) {
+      const citationNumber = match[1];
+      const citationText = match[0]; // Full match like "[1, pp. 18-25]"
+      references.push({ 
+        name: `Citation ${citationNumber}`,
+        url: `#citation-${citationNumber}` // Placeholder URL
+      });
+    }
+    
+    // Extract simple bracket citations like [1] or [2]
+    const simpleBracketRegex = /\[(\d+)\]/gi;
+    while ((match = simpleBracketRegex.exec(content)) !== null) {
+      const citationNumber = match[1];
+      // Only add if we don't already have a more detailed citation for this number
+      if (!references.some(ref => ref.name.includes(`Citation ${citationNumber}`))) {
+        references.push({ 
+          name: `Source ${citationNumber}`,
+          url: `#source-${citationNumber}` // Placeholder URL
+        });
+      }
+    }
+    
     // Also look for citations in the format: "According to filename.pdf" or "Based on document.pdf"
     const citationRegex = /(?:according to|based on|from|in|see)\s+([^,\s]+\.(?:pdf|doc|docx|txt|md))/gi;
     while ((match = citationRegex.exec(content)) !== null) {
