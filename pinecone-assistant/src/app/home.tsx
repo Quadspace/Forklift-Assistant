@@ -8,6 +8,7 @@ import AssistantFiles from './components/AssistantFiles';
 import PromptSuggestions from './components/PromptSuggestions';
 import { File, Reference, Message } from './types';
 import { v4 as uuidv4 } from 'uuid';
+import FileManager from './components/FileManager';
 
 interface HomeProps {
   initialShowAssistantFiles: boolean;
@@ -27,6 +28,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
   const [isStreaming, setIsStreaming] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [darkMode, setDarkMode] = useState(false);
+  const [activeTab, setActiveTab] = useState<'chat' | 'files'>('chat');
 
   useEffect(() => {
     // Check for dark mode preference
@@ -123,8 +125,17 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
   }, []);
 
   const fetchFiles = async () => {
-    // Simplified - no files API needed for basic functionality
-    setFiles([]);
+    try {
+      const response = await fetch('/api/files');
+      const data = await response.json();
+      if (data.status === 'success') {
+        setFiles(data.files);
+      } else {
+        console.error('Error fetching files:', data.message);
+      }
+    } catch (error) {
+      console.error('Error fetching files:', error);
+    }
   };
 
   const checkAssistant = async () => {
@@ -413,6 +424,32 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           </h1>
           
           <div className="flex flex-col gap-4">
+            {/* Tab Navigation */}
+            <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
+              <button
+                onClick={() => setActiveTab('chat')}
+                className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === 'chat'
+                    ? 'bg-white dark:bg-gray-600 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+              >
+                💬 Chat
+              </button>
+              <button
+                onClick={() => setActiveTab('files')}
+                className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === 'files'
+                    ? 'bg-white dark:bg-gray-600 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+              >
+                📁 Files
+              </button>
+            </div>
+
+            {/* Tab Content */}
+            {activeTab === 'chat' ? (
             <div className="w-full">
               <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg mb-4 h-[calc(100vh-500px)] overflow-y-auto">
                 {messages.map((message, index) => (
@@ -516,10 +553,11 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                 </div>
               )}
             </div>
+            ) : null}
             
-            {showAssistantFiles && (
+            {activeTab === 'files' && (
               <div className="w-full">
-                <AssistantFiles files={files} referencedFiles={referencedFiles} />
+                <FileManager onFilesChange={setFiles} />
               </div>
             )}
           </div>
