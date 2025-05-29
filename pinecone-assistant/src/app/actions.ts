@@ -48,38 +48,50 @@ export async function chat(messages: Message[]) {
 
         const data = JSON.parse(event.data);
         
-        // Handle empty choices array (stream completion)
-        if (data && Array.isArray(data.choices) && data.choices.length === 0) {
-          stream.done();
-          eventSource.close();
-          return;
-        }
-        
-        // Handle finish reason
-        if (data?.choices[0]?.finish_reason) {
-          stream.done();
-          eventSource.close();
-          return;
-        }
-        
-        // Handle different message types from Pinecone streaming
-        if (data.type === 'message_start' || data.type === 'content_block_start') {
-          // Initialize message - just pass through
-          stream.update(event.data);
-        } else if (data.type === 'content_block_delta' || data?.choices[0]?.delta?.content) {
-          // Content chunk - pass through
-          stream.update(event.data);
-        } else if (data.type === 'citations' || data.citations) {
-          // Citation data - pass through for frontend processing
-          stream.update(event.data);
-        } else if (data.type === 'message_end') {
-          // End of message
-          stream.done();
-          eventSource.close();
-          return;
-        } else {
-          // Default: pass through any other data
-          stream.update(event.data);
+        // Handle different message types from Pinecone streaming (as per official docs)
+        switch (data.type) {
+          case 'message_start':
+            // Assistant has started sending a message
+            stream.update(JSON.stringify({ type: 'start' }));
+            break;
+            
+          case 'content_chunk':
+            // Assistant is sending a chunk of the message
+            if (data.delta?.content) {
+              stream.update(JSON.stringify({ type: 'content', content: data.delta.content }));
+            }
+            break;
+            
+          case 'citation':
+            // Assistant is sending a citation
+            stream.update(JSON.stringify({ type: 'citation', citation: data.citation }));
+            break;
+            
+          case 'message_end':
+            // Assistant has finished sending a message
+            if (data.finish_reason === 'stop') {
+              stream.update(JSON.stringify({ type: 'end' }));
+              eventSource.close();
+              stream.done();
+            }
+            break;
+            
+          default:
+            // Handle legacy format or other message types
+            if (data && Array.isArray(data.choices) && data.choices.length === 0) {
+              stream.done();
+              eventSource.close();
+              return;
+            }
+            
+            if (data?.choices[0]?.finish_reason) {
+              stream.done();
+              eventSource.close();
+              return;
+            }
+            
+            // Pass through other data formats
+            stream.update(event.data);
         }
         
       } catch (error) {

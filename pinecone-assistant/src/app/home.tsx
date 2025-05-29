@@ -180,46 +180,73 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           
           const data = JSON.parse(chunk);
           
-          // Handle content delta from Pinecone streaming
-          if (data.type === 'content_block_delta' || data?.choices[0]?.delta?.content) {
-            const content = data.type === 'content_block_delta' 
-              ? data.delta?.text 
-              : data.choices[0]?.delta?.content;
+          // Handle different message types from Pinecone streaming (as per official docs)
+          switch (data.type) {
+            case 'start':
+              // Message started - assistant is beginning to respond
+              break;
               
-            if (content) {
-              accumulatedContent += content;
+            case 'content':
+              // Content chunk from the assistant
+              if (data.content) {
+                accumulatedContent += data.content;
+                
+                setMessages(prevMessages => {
+                  const updatedMessages = [...prevMessages];
+                  const lastMessage = updatedMessages[updatedMessages.length - 1];
+                  lastMessage.content = accumulatedContent;
+                  return updatedMessages;
+                });
+              }
+              break;
               
-              setMessages(prevMessages => {
-                const updatedMessages = [...prevMessages];
-                const lastMessage = updatedMessages[updatedMessages.length - 1];
-                lastMessage.content = accumulatedContent;
-                return updatedMessages;
-              });
-            }
-          }
-          
-          // Handle structured citations from Pinecone
-          else if (data.type === 'citations' || data.citations) {
-            const citations = data.citations || data;
-            if (Array.isArray(citations)) {
-              const structuredReferences = citations.map((citation: any) => ({
-                name: citation.file?.name || citation.filename || `Citation ${citation.position || ''}`,
-                url: citation.file?.url || citation.url || `#citation-${citation.position || Math.random()}`,
-                pages: citation.pages,
-                highlight: citation.highlight,
-                position: citation.position
-              }));
+            case 'citation':
+              // Citation from the assistant
+              if (data.citation) {
+                const citation = data.citation;
+                const structuredReference = {
+                  name: citation.references?.[0]?.file?.name || `Citation ${citation.position || ''}`,
+                  url: citation.references?.[0]?.file?.signed_url || `#citation-${citation.position || Math.random()}`,
+                  pages: citation.references?.[0]?.pages,
+                  highlight: citation.references?.[0]?.highlight?.content,
+                  position: citation.position
+                };
+                
+                // Update the current message with the new citation
+                setMessages(prevMessages => {
+                  const updatedMessages = [...prevMessages];
+                  const lastMessage = updatedMessages[updatedMessages.length - 1];
+                  if (!lastMessage.references) {
+                    lastMessage.references = [];
+                  }
+                  lastMessage.references.push(structuredReference);
+                  return updatedMessages;
+                });
+                
+                // Also update the global referenced files
+                setReferencedFiles(prevFiles => [...prevFiles, structuredReference]);
+              }
+              break;
               
-              // Update the current message with citations
-              setMessages(prevMessages => {
-                const updatedMessages = [...prevMessages];
-                const lastMessage = updatedMessages[updatedMessages.length - 1];
-                lastMessage.references = structuredReferences;
-                return updatedMessages;
-              });
+            case 'end':
+              // Message ended - assistant finished responding
+              break;
               
-              setReferencedFiles(structuredReferences);
-            }
+            default:
+              // Handle legacy format for backward compatibility
+              if (data?.choices[0]?.delta?.content) {
+                const content = data.choices[0].delta.content;
+                if (content) {
+                  accumulatedContent += content;
+                  
+                  setMessages(prevMessages => {
+                    const updatedMessages = [...prevMessages];
+                    const lastMessage = updatedMessages[updatedMessages.length - 1];
+                    lastMessage.content = accumulatedContent;
+                    return updatedMessages;
+                  });
+                }
+              }
           }
 
         } catch (error) {
@@ -272,46 +299,73 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           
           const data = JSON.parse(chunk);
           
-          // Handle content delta from Pinecone streaming
-          if (data.type === 'content_block_delta' || data?.choices[0]?.delta?.content) {
-            const content = data.type === 'content_block_delta' 
-              ? data.delta?.text 
-              : data.choices[0]?.delta?.content;
+          // Handle different message types from Pinecone streaming (as per official docs)
+          switch (data.type) {
+            case 'start':
+              // Message started - assistant is beginning to respond
+              break;
               
-            if (content) {
-              accumulatedContent += content;
+            case 'content':
+              // Content chunk from the assistant
+              if (data.content) {
+                accumulatedContent += data.content;
+                
+                setMessages(prevMessages => {
+                  const updatedMessages = [...prevMessages];
+                  const lastMessage = updatedMessages[updatedMessages.length - 1];
+                  lastMessage.content = accumulatedContent;
+                  return updatedMessages;
+                });
+              }
+              break;
               
-              setMessages(prevMessages => {
-                const updatedMessages = [...prevMessages];
-                const lastMessage = updatedMessages[updatedMessages.length - 1];
-                lastMessage.content = accumulatedContent;
-                return updatedMessages;
-              });
-            }
-          }
-          
-          // Handle structured citations from Pinecone
-          else if (data.type === 'citations' || data.citations) {
-            const citations = data.citations || data;
-            if (Array.isArray(citations)) {
-              const structuredReferences = citations.map((citation: any) => ({
-                name: citation.file?.name || citation.filename || `Citation ${citation.position || ''}`,
-                url: citation.file?.url || citation.url || `#citation-${citation.position || Math.random()}`,
-                pages: citation.pages,
-                highlight: citation.highlight,
-                position: citation.position
-              }));
+            case 'citation':
+              // Citation from the assistant
+              if (data.citation) {
+                const citation = data.citation;
+                const structuredReference = {
+                  name: citation.references?.[0]?.file?.name || `Citation ${citation.position || ''}`,
+                  url: citation.references?.[0]?.file?.signed_url || `#citation-${citation.position || Math.random()}`,
+                  pages: citation.references?.[0]?.pages,
+                  highlight: citation.references?.[0]?.highlight?.content,
+                  position: citation.position
+                };
+                
+                // Update the current message with the new citation
+                setMessages(prevMessages => {
+                  const updatedMessages = [...prevMessages];
+                  const lastMessage = updatedMessages[updatedMessages.length - 1];
+                  if (!lastMessage.references) {
+                    lastMessage.references = [];
+                  }
+                  lastMessage.references.push(structuredReference);
+                  return updatedMessages;
+                });
+                
+                // Also update the global referenced files
+                setReferencedFiles(prevFiles => [...prevFiles, structuredReference]);
+              }
+              break;
               
-              // Update the current message with citations
-              setMessages(prevMessages => {
-                const updatedMessages = [...prevMessages];
-                const lastMessage = updatedMessages[updatedMessages.length - 1];
-                lastMessage.references = structuredReferences;
-                return updatedMessages;
-              });
+            case 'end':
+              // Message ended - assistant finished responding
+              break;
               
-              setReferencedFiles(structuredReferences);
-            }
+            default:
+              // Handle legacy format for backward compatibility
+              if (data?.choices[0]?.delta?.content) {
+                const content = data.choices[0].delta.content;
+                if (content) {
+                  accumulatedContent += content;
+                  
+                  setMessages(prevMessages => {
+                    const updatedMessages = [...prevMessages];
+                    const lastMessage = updatedMessages[updatedMessages.length - 1];
+                    lastMessage.content = accumulatedContent;
+                    return updatedMessages;
+                  });
+                }
+              }
           }
 
         } catch (error) {
