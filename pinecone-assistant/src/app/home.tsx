@@ -179,35 +179,53 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           if (!chunk || typeof chunk !== 'string') continue;
           
           const data = JSON.parse(chunk);
-          const content = data.choices[0]?.delta?.content;
           
-          if (content) {
-            accumulatedContent += content;
-            
-            setMessages(prevMessages => {
-              const updatedMessages = [...prevMessages];
-              const lastMessage = updatedMessages[updatedMessages.length - 1];
-              lastMessage.content = accumulatedContent;
-              return updatedMessages;
-            });
+          // Handle content delta from Pinecone streaming
+          if (data.type === 'content_block_delta' || data?.choices[0]?.delta?.content) {
+            const content = data.type === 'content_block_delta' 
+              ? data.delta?.text 
+              : data.choices[0]?.delta?.content;
+              
+            if (content) {
+              accumulatedContent += content;
+              
+              setMessages(prevMessages => {
+                const updatedMessages = [...prevMessages];
+                const lastMessage = updatedMessages[updatedMessages.length - 1];
+                lastMessage.content = accumulatedContent;
+                return updatedMessages;
+              });
+            }
+          }
+          
+          // Handle structured citations from Pinecone
+          else if (data.type === 'citations' || data.citations) {
+            const citations = data.citations || data;
+            if (Array.isArray(citations)) {
+              const structuredReferences = citations.map((citation: any) => ({
+                name: citation.file?.name || citation.filename || `Citation ${citation.position || ''}`,
+                url: citation.file?.url || citation.url || `#citation-${citation.position || Math.random()}`,
+                pages: citation.pages,
+                highlight: citation.highlight,
+                position: citation.position
+              }));
+              
+              // Update the current message with citations
+              setMessages(prevMessages => {
+                const updatedMessages = [...prevMessages];
+                const lastMessage = updatedMessages[updatedMessages.length - 1];
+                lastMessage.references = structuredReferences;
+                return updatedMessages;
+              });
+              
+              setReferencedFiles(structuredReferences);
+            }
           }
 
         } catch (error) {
           console.error('Error parsing chunk:', error);
         }
       }
-
-      // Extract references after the full message is received
-      const extractedReferences = extractReferences(accumulatedContent);
-      setReferencedFiles(extractedReferences);
-
-      // Update the assistant message with the extracted references
-      setMessages(prevMessages => {
-        const updatedMessages = [...prevMessages];
-        const lastMessage = updatedMessages[updatedMessages.length - 1];
-        lastMessage.references = extractedReferences;
-        return updatedMessages;
-      });
 
     } catch (error) {
       console.error('Error in chat:', error);
@@ -253,35 +271,53 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           if (!chunk || typeof chunk !== 'string') continue;
           
           const data = JSON.parse(chunk);
-          const content = data.choices[0]?.delta?.content;
           
-          if (content) {
-            accumulatedContent += content;
-            
-            setMessages(prevMessages => {
-              const updatedMessages = [...prevMessages];
-              const lastMessage = updatedMessages[updatedMessages.length - 1];
-              lastMessage.content = accumulatedContent;
-              return updatedMessages;
-            });
+          // Handle content delta from Pinecone streaming
+          if (data.type === 'content_block_delta' || data?.choices[0]?.delta?.content) {
+            const content = data.type === 'content_block_delta' 
+              ? data.delta?.text 
+              : data.choices[0]?.delta?.content;
+              
+            if (content) {
+              accumulatedContent += content;
+              
+              setMessages(prevMessages => {
+                const updatedMessages = [...prevMessages];
+                const lastMessage = updatedMessages[updatedMessages.length - 1];
+                lastMessage.content = accumulatedContent;
+                return updatedMessages;
+              });
+            }
+          }
+          
+          // Handle structured citations from Pinecone
+          else if (data.type === 'citations' || data.citations) {
+            const citations = data.citations || data;
+            if (Array.isArray(citations)) {
+              const structuredReferences = citations.map((citation: any) => ({
+                name: citation.file?.name || citation.filename || `Citation ${citation.position || ''}`,
+                url: citation.file?.url || citation.url || `#citation-${citation.position || Math.random()}`,
+                pages: citation.pages,
+                highlight: citation.highlight,
+                position: citation.position
+              }));
+              
+              // Update the current message with citations
+              setMessages(prevMessages => {
+                const updatedMessages = [...prevMessages];
+                const lastMessage = updatedMessages[updatedMessages.length - 1];
+                lastMessage.references = structuredReferences;
+                return updatedMessages;
+              });
+              
+              setReferencedFiles(structuredReferences);
+            }
           }
 
         } catch (error) {
           console.error('Error parsing chunk:', error);
         }
       }
-
-      // Extract references after the full message is received
-      const extractedReferences = extractReferences(accumulatedContent);
-      setReferencedFiles(extractedReferences);
-
-      // Update the assistant message with the extracted references
-      setMessages(prevMessages => {
-        const updatedMessages = [...prevMessages];
-        const lastMessage = updatedMessages[updatedMessages.length - 1];
-        lastMessage.references = extractedReferences;
-        return updatedMessages;
-      });
 
     } catch (error) {
       console.error('Error in chat:', error);
@@ -357,12 +393,19 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                         </ReactMarkdown>
                         {message.references && showCitations && (
                           <div className="mt-2">
-                            <ul>
+                            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Sources:</div>
+                            <ul className="space-y-1">
                               {message.references.map((ref, i) => (
-                                <li key={i}>
+                                <li key={i} className="text-sm">
                                   <a href={ref.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
-                                    {ref.name}
+                                    🔗 {ref.name}
+                                    {ref.pages && ` (Pages ${ref.pages})`}
                                   </a>
+                                  {ref.highlight && (
+                                    <div className="ml-4 mt-1 text-xs text-gray-500 dark:text-gray-400 italic border-l-2 border-gray-300 pl-2">
+                                      "{ref.highlight}"
+                                    </div>
+                                  )}
                                 </li>
                               ))}
                             </ul>

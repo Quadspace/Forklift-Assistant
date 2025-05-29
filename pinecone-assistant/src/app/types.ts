@@ -14,6 +14,9 @@ export interface File {
   export interface Reference {
     name: string;
     url?: string;
+    pages?: string | number; // Page numbers from Pinecone citations
+    highlight?: string; // Highlighted text from Pinecone citations
+    position?: number; // Position in the citation array
   }
 
   export interface Message {

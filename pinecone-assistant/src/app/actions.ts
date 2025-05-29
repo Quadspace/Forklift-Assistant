@@ -22,13 +22,17 @@ export async function chat(messages: Message[]) {
       body: JSON.stringify({
         stream: true,
         messages,
+        include_highlights: true,
+        model: 'gpt-4o'
       }),
       headers: {
         Authorization: `Bearer ${process.env.PINECONE_API_KEY}`,
         'X-Project-Id': process.env.PINECONE_ASSISTANT_ID!,
+        'X-Pinecone-API-Version': '2025-04',
         'User-Agent': 'Forklift-Assistant/1.0',
         'Accept': 'text/event-stream',
         'Cache-Control': 'no-cache',
+        'Content-Type': 'application/json',
       },
       disableRetry: true,
       withCredentials: false,
@@ -58,8 +62,25 @@ export async function chat(messages: Message[]) {
           return;
         }
         
-        // Update stream with data
-        stream.update(event.data);
+        // Handle different message types from Pinecone streaming
+        if (data.type === 'message_start' || data.type === 'content_block_start') {
+          // Initialize message - just pass through
+          stream.update(event.data);
+        } else if (data.type === 'content_block_delta' || data?.choices[0]?.delta?.content) {
+          // Content chunk - pass through
+          stream.update(event.data);
+        } else if (data.type === 'citations' || data.citations) {
+          // Citation data - pass through for frontend processing
+          stream.update(event.data);
+        } else if (data.type === 'message_end') {
+          // End of message
+          stream.done();
+          eventSource.close();
+          return;
+        } else {
+          // Default: pass through any other data
+          stream.update(event.data);
+        }
         
       } catch (error) {
         console.error('Error parsing event data:', error);
