@@ -6,10 +6,9 @@ import { File, Reference } from '../types';
 interface AssistantFilesProps {
   files: File[];
   referencedFiles: Reference[];
-  onOpenPdfModal?: (pdfUrl: string, fileName: string, startPage: number, endPage?: number) => void;
 }
 
-export default function AssistantFiles({ files, referencedFiles, onOpenPdfModal }: AssistantFilesProps) {
+export default function AssistantFiles({ files, referencedFiles }: AssistantFilesProps) {
   const [isOpen, setIsOpen] = useState(true);
 
   const formatFileSize = (bytes: number) => {
@@ -31,11 +30,8 @@ export default function AssistantFiles({ files, referencedFiles, onOpenPdfModal 
   };
 
   const handleFileClick = (file: File) => {
-    if (isPdfFile(file) && onOpenPdfModal && file.signed_url) {
-      const fileName = file.name.split(/[\\/]/).pop() || file.name;
-      onOpenPdfModal(file.signed_url, fileName, 1);
-    } else if (file.signed_url) {
-      // For non-PDF files, open in new tab
+    if (file.signed_url) {
+      // Open all files in new tab (simple approach like original)
       window.open(file.signed_url, '_blank');
     }
   };
@@ -65,7 +61,7 @@ export default function AssistantFiles({ files, referencedFiles, onOpenPdfModal 
                     file.signed_url ? 'cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 hover:shadow-md' : ''
                   }`}
                   onClick={() => handleFileClick(file)}
-                  title={file.signed_url ? `Click to ${isPdfFile(file) ? 'preview' : 'download'} ${file.name}` : 'File not available'}
+                  title={file.signed_url ? `Click to open ${file.name}` : 'File not available'}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
@@ -87,9 +83,9 @@ export default function AssistantFiles({ files, referencedFiles, onOpenPdfModal 
                       <p className="text-xs text-gray-600 dark:text-gray-400">
                         Created: {new Date(file.created_at).toLocaleDateString()}
                       </p>
-                      {isPdfFile(file) && file.signed_url && (
+                      {file.signed_url && (
                         <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-1">
-                          Click to preview
+                          Click to open
                         </p>
                       )}
                     </div>
