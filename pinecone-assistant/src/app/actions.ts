@@ -2,9 +2,6 @@
 
 import { createStreamableValue } from 'ai/rsc'
 import { EventSource } from 'extended-eventsource';
-import { logger } from './utils/logger';
-import { cache, Cache } from './utils/cache';
-import { connectionHealth, withConnectionHealth } from './utils/connectionHealth';
 
 type Message = {
   role: string;
@@ -44,7 +41,7 @@ class StreamManager {
   // Setup a global timeout to prevent infinite connections
   private setupGlobalTimeout(): void {
     const globalTimeout = setTimeout(() => {
-      logger.warn('Global connection timeout reached - forcing stream completion', {
+      console.warn('Global connection timeout reached - forcing stream completion', {
         duration: Date.now() - this.connectionStartTime,
         state: this.state
       });
@@ -67,13 +64,13 @@ class StreamManager {
   // Safe stream update with state checking
   safeUpdate(data: string): boolean {
     if (this.state !== StreamState.ACTIVE) {
-      logger.debug('Attempted to update stream in invalid state', { state: this.state });
+      console.debug('Attempted to update stream in invalid state', { state: this.state });
       return false;
     }
 
     // Check for inactivity timeout
     if (this.isInactive()) {
-      logger.warn('Stream inactive for too long - completing stream', {
+      console.warn('Stream inactive for too long - completing stream', {
         inactiveDuration: Date.now() - this.lastActivityTime
       });
       this.safeComplete();
@@ -86,7 +83,7 @@ class StreamManager {
       return true;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      logger.error('Error updating stream', { 
+      console.error('Error updating stream', { 
         error: errorMsg,
         state: this.state,
         dataLength: data?.length || 0
@@ -94,7 +91,7 @@ class StreamManager {
       
       // Check for specific "stream closed" error
       if (errorMsg.includes('stream is already closed') || errorMsg.includes('Value stream is already closed')) {
-        logger.warn('Detected closed stream error - transitioning to closed state');
+        console.warn('Detected closed stream error - transitioning to closed state');
         this.setState(StreamState.CLOSED);
         return false;
       }
@@ -107,38 +104,28 @@ class StreamManager {
   // Safe stream completion with state checking
   safeComplete(): boolean {
     if (this.state === StreamState.CLOSED || this.state === StreamState.CLOSING) {
-      logger.debug('Stream already closed or closing', { state: this.state });
+      console.debug('Stream already closed or closing', { state: this.state });
       return false;
     }
 
     this.setState(StreamState.CLOSING);
     
     try {
-      // Cache complete response if we have content
-      if (this.accumulatedContent.length > 50) {
-        cache.set(this.cacheKey, this.accumulatedContent, 15 * 60 * 1000);
-      }
+      // Note: Removed caching for simplicity
       
       this.stream.done();
       this.setState(StreamState.CLOSED);
       
-      // Record successful connection
-      const connectionTime = Date.now() - this.connectionStartTime;
-      connectionHealth.recordConnectionSuccess(connectionTime);
+      // Note: Removed connection health tracking for simplicity
       
       this.cleanup();
       return true;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      logger.error('Error completing stream', { 
+      console.error('Error completing stream', { 
         error: errorMsg,
         state: this.state 
       });
-      
-      // Don't record as connection failure if stream was already closed
-      if (!errorMsg.includes('stream is already closed')) {
-        connectionHealth.recordConnectionFailure(`Stream completion error: ${errorMsg}`);
-      }
       
       this.setState(StreamState.ERROR);
       this.cleanup();
@@ -149,7 +136,7 @@ class StreamManager {
   // Safe stream error with state checking
   safeError(errorMessage: string): boolean {
     if (this.state === StreamState.CLOSED) {
-      logger.debug('Attempted to error already closed stream', { state: this.state });
+      console.debug('Attempted to error already closed stream', { state: this.state });
       return false;
     }
 
@@ -158,14 +145,11 @@ class StreamManager {
     try {
       this.stream.error({ message: errorMessage });
       
-      // Record connection failure
-      connectionHealth.recordConnectionFailure(errorMessage);
-      
       this.cleanup();
       return true;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      logger.error('Error setting stream error', { 
+      console.error('Error setting stream error', { 
         error: errorMsg,
         originalError: errorMessage 
       });
@@ -191,7 +175,7 @@ class StreamManager {
 
   // Set stream state
   private setState(newState: StreamState): void {
-    logger.debug('Stream state change', { from: this.state, to: newState });
+    console.debug('Stream state change', { from: this.state, to: newState });
     this.state = newState;
   }
 
@@ -222,7 +206,7 @@ class StreamManager {
       try {
         clearTimeout(timeout);
       } catch (e) {
-        logger.debug('Error clearing timeout', e);
+        console.debug('Error clearing timeout', e);
       }
     });
     this.timeouts = [];
@@ -232,7 +216,7 @@ class StreamManager {
       try {
         this.eventSource.close();
       } catch (e) {
-        logger.debug('Error closing EventSource', e);
+        console.debug('Error closing EventSource', e);
       }
       this.eventSource = null;
     }
@@ -252,128 +236,88 @@ export async function chat(messages: Message[]) {
   let streamManager: StreamManager | null = null;
 
   try {
-    // Check connection health before proceeding
-    if (!connectionHealth.shouldAllowConnection()) {
-      const healthStatus = connectionHealth.getHealthStatus();
-      logger.error('Connection blocked by circuit breaker', healthStatus);
-      
-      const stream = createStreamableValue();
-      stream.error({ 
-        message: 'Service temporarily unavailable due to connection issues. Please try again in a few minutes.' 
-      });
-      return { object: stream.value };
-    }
-
     // Create an initial stream
     const stream = createStreamableValue();
 
-    // Check cache for similar queries
-    const cacheKey = Cache.generateKey('chat', { 
-      lastMessage: messages[messages.length - 1]?.content?.substring(0, 100) || '',
-      messageCount: messages.length 
-    });
-    
-    const cachedResponse = cache.get<string>(cacheKey);
-    if (cachedResponse) {
-      logger.info('Returning cached response for similar query');
-      
-      try {
-        stream.update(JSON.stringify({
-          choices: [{
-            delta: { content: cachedResponse },
-            finish_reason: 'stop'
-          }]
-        }));
-        stream.done();
-      } catch (error) {
-        logger.error('Error returning cached response', error);
-        stream.error({ message: 'Error retrieving cached response' });
-      }
-      
-      return { object: stream.value };
-    }
-
     // Initialize stream manager
-    streamManager = new StreamManager(stream, cacheKey);
+    streamManager = new StreamManager(stream, '');
 
     // Construct the full URL to the Pinecone Assistant API
     const url = `${process.env.PINECONE_ASSISTANT_URL}/assistant/chat/${process.env.PINECONE_ASSISTANT_NAME}/chat/completions`;
-    logger.debug('Connecting to Pinecone Assistants API', { url });
+    console.debug('Connecting to Pinecone Assistants API', { url });
 
     // Production-optimized EventSource creation with longer timeouts for cloud deployment
-    const eventSource = await withConnectionHealth(async () => {
-      return new Promise<EventSource>((resolve, reject) => {
-        const es = new EventSource(url, {
-          method: 'POST',
-          body: JSON.stringify({
-            stream: true,
-            messages,
-          }),
-          headers: {
-            Authorization: `Bearer ${process.env.PINECONE_API_KEY}`,
-            'X-Project-Id': process.env.PINECONE_ASSISTANT_ID!,
-            'User-Agent': 'Forklift-Assistant/1.0',
-            'Accept': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-          },
-          disableRetry: true,
-          // Add connection options for better stability
-          withCredentials: false,
+    const eventSource = await new Promise<EventSource>((resolve, reject) => {
+      const es = new EventSource(url, {
+        method: 'POST',
+        body: JSON.stringify({
+          stream: true,
+          messages,
+        }),
+        headers: {
+          Authorization: `Bearer ${process.env.PINECONE_API_KEY}`,
+          'X-Project-Id': process.env.PINECONE_ASSISTANT_ID!,
+          'User-Agent': 'Forklift-Assistant/1.0',
+          'Accept': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+        },
+        disableRetry: true,
+        // Add connection options for better stability
+        withCredentials: false,
+      });
+
+      // Extended connection timeout for cloud deployment (30 seconds)
+      const connectionTimeout = setTimeout(() => {
+        console.warn('EventSource connection timeout - closing connection');
+        es.close();
+        reject(new Error('EventSource connection timeout'));
+      }, 30000); // 30 seconds for initial connection
+
+      // Track connection attempts
+      let connectionAttempted = false;
+
+      es.onopen = () => {
+        connectionAttempted = true;
+        clearTimeout(connectionTimeout);
+        console.info('EventSource connection opened successfully', { 
+          url: url.replace(process.env.PINECONE_API_KEY || '', '[REDACTED]') 
+        });
+        resolve(es);
+      };
+
+      es.onerror = (error: any) => {
+        clearTimeout(connectionTimeout);
+        
+        // Log detailed error information
+        console.error('EventSource connection error', { 
+          readyState: es.readyState,
+          status: error?.status,
+          message: error?.message,
+          type: error?.type,
+          connectionAttempted,
+          url: url.replace(process.env.PINECONE_API_KEY || '', '[REDACTED]')
         });
 
-        // Extended connection timeout for cloud deployment (30 seconds)
-        const connectionTimeout = setTimeout(() => {
-          logger.warn('EventSource connection timeout - closing connection');
-          es.close();
-          reject(new Error('EventSource connection timeout'));
-        }, 30000); // 30 seconds for initial connection
-
-        // Track connection attempts
-        let connectionAttempted = false;
-
-        es.onopen = () => {
-          connectionAttempted = true;
-          clearTimeout(connectionTimeout);
-          logger.info('EventSource connection opened successfully', { 
-            url: url.replace(process.env.PINECONE_API_KEY || '', '[REDACTED]') 
-          });
-          resolve(es);
-        };
-
-        es.onerror = (error: any) => {
-          clearTimeout(connectionTimeout);
-          
-          // Log detailed error information
-          logger.error('EventSource connection error', { 
-            readyState: es.readyState,
-            status: error?.status,
-            message: error?.message,
-            type: error?.type,
-            connectionAttempted,
-            url: url.replace(process.env.PINECONE_API_KEY || '', '[REDACTED]')
-          });
-
-          es.close();
-          
-          // Provide more specific error messages
-          let errorMessage = 'EventSource connection failed';
-          if (!connectionAttempted) {
-            errorMessage = 'Failed to establish initial connection to Pinecone Assistant API';
-          } else if (error?.status) {
-            errorMessage = `Connection failed with status ${error.status}`;
-          }
-          
-          reject(new Error(errorMessage));
-        };
-      });
-    }, 45000); // 45 second total timeout for connection establishment
+        es.close();
+        
+        // Provide more specific error messages
+        let errorMessage = 'EventSource connection failed';
+        if (!connectionAttempted) {
+          errorMessage = 'Failed to establish initial connection to Pinecone Assistant API';
+        } else if (error?.status) {
+          errorMessage = `Connection failed with status ${error.status}`;
+        }
+        
+        reject(new Error(errorMessage));
+      };
+    });
 
     streamManager.setEventSource(eventSource);
 
     // Simplified activity monitoring using StreamManager's built-in tracking
     const activityMonitor = setInterval(() => {
       if (streamManager && streamManager.isActive() && streamManager.isInactive()) {
-        logger.warn('Stream inactivity detected by monitor - completing stream');
+        console.warn('Stream inactivity detected by monitor - completing stream');
         streamManager.safeComplete();
         clearInterval(activityMonitor);
       }
@@ -384,11 +328,11 @@ export async function chat(messages: Message[]) {
     // Handle incoming messages with improved error handling
     eventSource.onmessage = (event: MessageEvent) => {
       if (!streamManager || !streamManager.isActive()) {
-        logger.debug('Received message for inactive stream, ignoring');
+        console.debug('Received message for inactive stream, ignoring');
         return;
       }
 
-      logger.debug('Received event data chunk', { 
+      console.debug('Received event data chunk', { 
         dataLength: event.data?.length || 0 
       });
       
@@ -398,7 +342,7 @@ export async function chat(messages: Message[]) {
       try {
         // Handle empty or whitespace-only data
         if (!event.data || event.data.trim() === '') {
-          logger.debug('Received empty event data, skipping');
+          console.debug('Received empty event data, skipping');
           return;
         }
 
@@ -406,7 +350,7 @@ export async function chat(messages: Message[]) {
         
         // Handle empty choices array (stream completion)
         if (message && Array.isArray(message.choices) && message.choices.length === 0) {
-          logger.info('Stream finished: Received empty choices array');
+          console.info('Stream finished: Received empty choices array');
           streamManager.safeComplete();
           return;
         }
@@ -417,14 +361,14 @@ export async function chat(messages: Message[]) {
           streamManager.addContent(content);
           
           if (!streamManager.safeUpdate(event.data)) {
-            logger.warn('Failed to update stream with content - stream may be closed');
+            console.warn('Failed to update stream with content - stream may be closed');
             return;
           }
         }
         
         // Handle finish reason
         else if (message?.choices[0]?.finish_reason) {
-          logger.info('Stream finished by assistant', { 
+          console.info('Stream finished by assistant', { 
             finish_reason: message.choices[0].finish_reason 
           });
           streamManager.safeComplete();
@@ -433,7 +377,7 @@ export async function chat(messages: Message[]) {
         
         // Handle unexpected message structure
         else {
-          logger.debug('Received message with unexpected structure', { 
+          console.debug('Received message with unexpected structure', { 
             hasChoices: !!message?.choices,
             messageKeys: Object.keys(message || {}),
             dataPreview: event.data?.substring(0, 100)
@@ -441,27 +385,27 @@ export async function chat(messages: Message[]) {
           
           // Check for empty object (possible completion signal)
           if (message && typeof message === 'object' && Object.keys(message).length === 0) {
-            logger.info('Stream possibly finished: Received empty object');
+            console.info('Stream possibly finished: Received empty object');
             streamManager.safeComplete();
             return;
           }
         }
         
       } catch (parseError) {
-        logger.error('Error parsing event data', { 
+        console.error('Error parsing event data', { 
           error: parseError instanceof Error ? parseError.message : String(parseError),
           eventData: event.data?.substring(0, 200), // Log first 200 chars for debugging
           eventDataType: typeof event.data
         });
         
         // Don't fail the entire stream for parsing errors, just skip this chunk
-        logger.warn('Skipping malformed event data chunk');
+        console.warn('Skipping malformed event data chunk');
       }
     };
 
     // Handle EventSource errors during streaming
     eventSource.onerror = (error: any) => {
-      logger.error('EventSource error during streaming', { 
+      console.error('EventSource error during streaming', { 
         status: error?.status,
         message: error?.message,
         type: error?.type,
@@ -488,15 +432,10 @@ export async function chat(messages: Message[]) {
 
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    logger.error('Unexpected error in chat function', { 
+    console.error('Unexpected error in chat function', { 
       error: errorMsg,
       stack: error instanceof Error ? error.stack : undefined
     });
-    
-    // Record connection failure if it's a connection-related error
-    if (errorMsg.includes('timeout') || errorMsg.includes('connection') || errorMsg.includes('network')) {
-      connectionHealth.recordConnectionFailure(errorMsg);
-    }
     
     if (streamManager) {
       // Provide specific error message based on error type
