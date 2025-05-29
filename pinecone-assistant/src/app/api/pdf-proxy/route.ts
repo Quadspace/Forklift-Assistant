@@ -16,7 +16,22 @@ export async function GET(request: NextRequest) {
 
   try {
     // Decode the URL and validate it
-    const decodedUrl = decodeURIComponent(pdfUrl);
+    let decodedUrl = decodeURIComponent(pdfUrl);
+    
+    // Handle relative URLs by converting to absolute URLs
+    if (decodedUrl.startsWith('/api/files/')) {
+      const baseUrl = process.env.VERCEL_URL 
+        ? `https://${process.env.VERCEL_URL}` 
+        : process.env.NODE_ENV === 'production'
+        ? 'https://your-domain.com' // Replace with your actual domain
+        : 'http://localhost:3002';
+      
+      decodedUrl = `${baseUrl}${decodedUrl}`;
+      logger.info('Converted relative URL to absolute', { 
+        original: pdfUrl,
+        converted: decodedUrl.substring(0, 100) + '...'
+      });
+    }
     
     // Basic URL validation before creating URL object
     if (!decodedUrl.startsWith('http://') && !decodedUrl.startsWith('https://')) {

@@ -291,7 +291,9 @@ export function findMatchingPDFFile(reference: PDFReference, files: any[], refer
     // If no signed URL found, create a fallback using the file ID
     if (file.id) {
       logger.info(`🔄 Creating fallback URL for ${file.name} using file ID`);
-      const fallbackUrl = `/api/files/${file.id}/download`;
+      // Create absolute URL for PDF proxy compatibility
+      const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3002';
+      const fallbackUrl = `${baseUrl}/api/files/${file.id}/download`;
       return {
         ...file,
         signed_url: fallbackUrl

@@ -499,9 +499,26 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     logger.info('✅ Processing PDF URL...');
     
     try {
-      // Process the PDF URL to ensure it works with the viewer
-      const processedUrl = processPdfUrl(pdfUrl);
-      logger.info('📄 PDF URL processed successfully');
+      let processedUrl = pdfUrl;
+      
+      // If it's a local API endpoint, use it directly without proxy
+      if (pdfUrl.includes('/api/files/') && (pdfUrl.startsWith('http') || pdfUrl.startsWith('/'))) {
+        logger.info('📄 Using local file endpoint directly');
+        // Ensure it's an absolute URL
+        if (pdfUrl.startsWith('/')) {
+          processedUrl = `${window.location.origin}${pdfUrl}`;
+        } else {
+          processedUrl = pdfUrl;
+        }
+      } else {
+        // For external URLs, use the PDF proxy
+        processedUrl = processPdfUrl(pdfUrl);
+      }
+      
+      logger.info('📄 PDF URL processed successfully', { 
+        original: pdfUrl.substring(0, 50) + '...',
+        processed: processedUrl.substring(0, 50) + '...'
+      });
       
       setPdfModalState({
         isOpen: true,
