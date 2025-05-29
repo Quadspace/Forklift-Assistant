@@ -614,7 +614,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
               {/* Your Logo */}
               <div className="ml-4 flex items-center">
                 <img
-                  src="/GreenBlack.png"
+                  src={darkMode ? "/GreenWhite.png" : "/GreenBlack.png"}
                   alt="Your Company Logo"
                   className="h-8 w-auto object-contain"
                 />
