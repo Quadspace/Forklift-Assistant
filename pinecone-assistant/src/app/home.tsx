@@ -152,22 +152,22 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       // Process the response stream from the Assistant
       for await (const chunk of readStreamableValue(object)) {
         try {
-          // Fix TypeScript error by ensuring chunk is a string
-          if (typeof chunk !== 'string') continue;
+          // The chunk is already the event data string from the backend
+          if (!chunk || typeof chunk !== 'string') continue;
           
           const data = JSON.parse(chunk);
           const content = data.choices[0]?.delta?.content;
           
           if (content) {
             accumulatedContent += content;
+            
+            setMessages(prevMessages => {
+              const updatedMessages = [...prevMessages];
+              const lastMessage = updatedMessages[updatedMessages.length - 1];
+              lastMessage.content = accumulatedContent;
+              return updatedMessages;
+            });
           }
-          
-          setMessages(prevMessages => {
-            const updatedMessages = [...prevMessages];
-            const lastMessage = updatedMessages[updatedMessages.length - 1];
-            lastMessage.content = accumulatedContent;
-            return updatedMessages;
-          });
 
         } catch (error) {
           console.error('Error parsing chunk:', error);
@@ -216,22 +216,22 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       // Process the response stream from the Assistant
       for await (const chunk of readStreamableValue(object)) {
         try {
-          // Fix TypeScript error by ensuring chunk is a string
-          if (typeof chunk !== 'string') continue;
+          // The chunk is already the event data string from the backend
+          if (!chunk || typeof chunk !== 'string') continue;
           
           const data = JSON.parse(chunk);
           const content = data.choices[0]?.delta?.content;
           
           if (content) {
             accumulatedContent += content;
+            
+            setMessages(prevMessages => {
+              const updatedMessages = [...prevMessages];
+              const lastMessage = updatedMessages[updatedMessages.length - 1];
+              lastMessage.content = accumulatedContent;
+              return updatedMessages;
+            });
           }
-          
-          setMessages(prevMessages => {
-            const updatedMessages = [...prevMessages];
-            const lastMessage = updatedMessages[updatedMessages.length - 1];
-            lastMessage.content = accumulatedContent;
-            return updatedMessages;
-          });
 
         } catch (error) {
           console.error('Error parsing chunk:', error);
