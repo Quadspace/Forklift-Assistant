@@ -587,28 +587,38 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           </h1>
           
           <div className="flex flex-col gap-4">
-            {/* Tab Navigation */}
-            <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
-              <button
-                onClick={() => setActiveTab('chat')}
-                className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === 'chat'
-                    ? 'bg-white dark:bg-gray-600 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                }`}
-              >
-                💬 Chat
-              </button>
-              <button
-                onClick={() => setActiveTab('files')}
-                className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === 'files'
-                    ? 'bg-white dark:bg-gray-600 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                }`}
-              >
-                📁 Files
-              </button>
+            {/* Tab Navigation with Logo */}
+            <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
+              <div className="flex space-x-1 flex-1">
+                <button
+                  onClick={() => setActiveTab('chat')}
+                  className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                    activeTab === 'chat'
+                      ? 'bg-white dark:bg-gray-600 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  }`}
+                >
+                  💬 Chat
+                </button>
+                <button
+                  onClick={() => setActiveTab('files')}
+                  className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                    activeTab === 'files'
+                      ? 'bg-white dark:bg-gray-600 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  }`}
+                >
+                  📁 Files
+                </button>
+              </div>
+              {/* Your Logo */}
+              <div className="ml-4 flex items-center">
+                <img
+                  src="/GreenBlack.png"
+                  alt="Your Company Logo"
+                  className="h-8 w-auto object-contain"
+                />
+              </div>
             </div>
 
             {/* Tab Content */}
