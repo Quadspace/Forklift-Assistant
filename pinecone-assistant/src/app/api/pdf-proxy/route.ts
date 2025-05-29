@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
         ? `https://${process.env.VERCEL_URL}` 
         : process.env.NODE_ENV === 'production'
         ? 'https://your-domain.com' // Replace with your actual domain
-        : 'http://localhost:3002';
+        : 'http://localhost:3000'; // FIX PORT - Next.js default is 3000
       
       decodedUrl = `${baseUrl}${decodedUrl}`;
       logger.info('Converted relative URL to absolute', { 
