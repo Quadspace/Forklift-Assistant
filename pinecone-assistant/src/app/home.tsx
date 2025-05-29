@@ -518,6 +518,43 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     }
   };
 
+  // Insert inline citations function from Pinecone's official guide
+  const insertInlineCitations = (content: string, citations: Reference[]): string => {
+    if (!citations || citations.length === 0) return content;
+    
+    let result = content;
+    let offset = 0; // Keep track of how much we've shifted the text
+    
+    // Sort citations by position to process them in order
+    const sortedCitations = [...citations].sort((a, b) => (a.position || 0) - (b.position || 0));
+    
+    sortedCitations.forEach((cite, index) => {
+      const citationNumber = index + 1;
+      const citation = `[${citationNumber}]`;
+      const position = cite.position || 0;
+      
+      const adjustedPosition = position + offset;
+      result = result.slice(0, adjustedPosition) + citation + result.slice(adjustedPosition);
+      
+      offset += citation.length;
+    });
+    
+    return result;
+  };
+
+  // Enhanced URL formatting for page-specific links
+  const formatCitationUrl = (ref: Reference): string => {
+    if (!ref.url || ref.url.startsWith('#')) return ref.url || '#';
+    
+    // Add page fragment if pages are specified (Pinecone format: signed_url#page=78)
+    if (ref.pages && ref.url.includes('storage.googleapis.com')) {
+      const pageNumber = typeof ref.pages === 'string' ? ref.pages.split(',')[0].trim() : ref.pages;
+      return `${ref.url}#page=${pageNumber}`;
+    }
+    
+    return ref.url;
+  };
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 bg-gray-50 dark:bg-gray-900">
       <button
@@ -606,7 +643,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                             ),
                           }}
                         >
-                          {message.content}
+                          {insertInlineCitations(message.content, message.references || [])}
                         </ReactMarkdown>
                         {message.references && showCitations && (
                           <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-600 rounded-lg border-l-4 border-blue-500">
@@ -618,38 +655,43 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                             </div>
                             <div className="space-y-2">
                               {message.references.map((ref, i) => (
-                                <div key={i} className="bg-white dark:bg-gray-700 p-2 rounded border">
+                                <div key={i} className="bg-white dark:bg-gray-700 p-3 rounded border">
                                   <div className="flex items-start justify-between">
                                     <div className="flex-1">
-                                      {ref.fileStatus === 'Available' && ref.url && !ref.url.startsWith('#') ? (
-                                        <a 
-                                          href={ref.url} 
-                                          target="_blank" 
-                                          rel="noopener noreferrer" 
-                                          className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium hover:underline flex items-center"
-                                        >
-                                          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                          </svg>
-                                          {ref.name}
-                                        </a>
-                                      ) : (
-                                        <div className="flex items-center text-gray-600 dark:text-gray-400">
-                                          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                          </svg>
-                                          {ref.name}
-                                          {ref.fileStatus !== 'Available' && (
-                                            <span className="ml-2 text-xs text-orange-600 dark:text-orange-400">
-                                              (File {ref.fileStatus})
-                                            </span>
-                                          )}
-                                        </div>
-                                      )}
-                                      <div className="flex items-center space-x-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                      <div className="flex items-center space-x-2 mb-2">
+                                        <span className="bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded">
+                                          [{i + 1}]
+                                        </span>
+                                        {ref.fileStatus === 'Available' && ref.url && !ref.url.startsWith('#') ? (
+                                          <a 
+                                            href={formatCitationUrl(ref)} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium hover:underline flex items-center"
+                                          >
+                                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                            </svg>
+                                            {ref.name}
+                                          </a>
+                                        ) : (
+                                          <div className="flex items-center text-gray-600 dark:text-gray-400">
+                                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            {ref.name}
+                                            {ref.fileStatus !== 'Available' && (
+                                              <span className="ml-2 text-xs text-orange-600 dark:text-orange-400">
+                                                (File {ref.fileStatus})
+                                              </span>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center space-x-3 text-xs text-gray-500 dark:text-gray-400">
                                         {ref.pages && (
                                           <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
-                                            Pages: {ref.pages}
+                                            Page {ref.pages}
                                           </span>
                                         )}
                                         {ref.fileStatus && (
@@ -672,9 +714,14 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                                     </div>
                                   </div>
                                   {ref.highlight && (
-                                    <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border-l-2 border-yellow-400 rounded">
-                                      <div className="text-xs text-yellow-800 dark:text-yellow-200 font-medium mb-1">Highlighted passage:</div>
-                                      <div className="text-sm text-gray-700 dark:text-gray-300 italic">
+                                    <div className="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 border-l-3 border-yellow-400 rounded">
+                                      <div className="text-xs text-yellow-800 dark:text-yellow-200 font-medium mb-2 flex items-center">
+                                        <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                          <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 4a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zm8 0a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1h-6a1 1 0 01-1-1v-6z" clipRule="evenodd" />
+                                        </svg>
+                                        Citation Highlight:
+                                      </div>
+                                      <div className="text-sm text-gray-700 dark:text-gray-300 italic leading-relaxed">
                                         "{ref.highlight}"
                                       </div>
                                     </div>
