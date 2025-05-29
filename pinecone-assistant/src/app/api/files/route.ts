@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const PINECONE_API_BASE = process.env.PINECONE_ASSISTANT_URL;
+const PINECONE_API_BASE = process.env.PINECONE_ASSISTANT_HOST;
 const PINECONE_API_KEY = process.env.PINECONE_API_KEY;
 const ASSISTANT_NAME = process.env.PINECONE_ASSISTANT_NAME;
 
@@ -16,6 +16,8 @@ export async function GET(request: NextRequest) {
       method: 'GET',
       headers: {
         'Api-Key': PINECONE_API_KEY!,
+        'X-Project-Id': process.env.PINECONE_ASSISTANT_ID!,
+        'X-Pinecone-API-Version': '2025-04',
         'Content-Type': 'application/json',
       },
     };
@@ -74,6 +76,8 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: {
         'Api-Key': PINECONE_API_KEY!,
+        'X-Project-Id': process.env.PINECONE_ASSISTANT_ID!,
+        'X-Pinecone-API-Version': '2025-04',
       },
       body: pineconeFormData,
     });

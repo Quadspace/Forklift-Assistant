@@ -12,9 +12,12 @@ export async function chat(messages: Message[]) {
   try {
     // Create an initial stream
     const stream = createStreamableValue();
+    let streamClosed = false;
 
     // Construct the full URL to the Pinecone Assistant API
-    const url = `${process.env.PINECONE_ASSISTANT_URL}/assistant/chat/${process.env.PINECONE_ASSISTANT_NAME}/chat/completions`;
+    const url = `${process.env.PINECONE_ASSISTANT_HOST}/assistant/chat/${process.env.PINECONE_ASSISTANT_NAME}/chat/completions`;
+
+    console.log('🚀 Starting chat with URL:', url);
 
     // Create EventSource connection
     const eventSource = new EventSource(url, {
@@ -38,6 +41,14 @@ export async function chat(messages: Message[]) {
       withCredentials: false,
     });
 
+    const closeStream = () => {
+      if (!streamClosed) {
+        streamClosed = true;
+        eventSource.close();
+        stream.done();
+      }
+    };
+
     // Handle incoming messages
     eventSource.onmessage = (event: MessageEvent) => {
       try {
@@ -46,70 +57,83 @@ export async function chat(messages: Message[]) {
           return;
         }
 
+        console.log('📡 Raw event data:', event.data);
         const data = JSON.parse(event.data);
+        console.log('📊 Parsed data:', data);
         
-        // Handle different message types from Pinecone streaming (as per official docs)
+        // Handle different message types from Pinecone streaming
         switch (data.type) {
           case 'message_start':
-            // Assistant has started sending a message
+            console.log('🎬 Message start');
             stream.update(JSON.stringify({ type: 'start' }));
             break;
             
           case 'content_chunk':
-            // Assistant is sending a chunk of the message
+            console.log('📝 Content chunk:', data.delta?.content);
             if (data.delta?.content) {
               stream.update(JSON.stringify({ type: 'content', content: data.delta.content }));
             }
             break;
             
           case 'citation':
-            // Assistant is sending a citation
+            console.log('📋 Citation received:', data.citation);
             stream.update(JSON.stringify({ type: 'citation', citation: data.citation }));
             break;
             
           case 'message_end':
-            // Assistant has finished sending a message
+            console.log('🏁 Message end, finish reason:', data.finish_reason);
             if (data.finish_reason === 'stop') {
               stream.update(JSON.stringify({ type: 'end' }));
-              eventSource.close();
-              stream.done();
+              closeStream();
             }
             break;
             
           default:
+            console.log('🔄 Default handler for:', data);
             // Handle legacy format or other message types
-            if (data && Array.isArray(data.choices) && data.choices.length === 0) {
-              stream.done();
-              eventSource.close();
-              return;
+            if (data && Array.isArray(data.choices)) {
+              if (data.choices.length === 0) {
+                console.log('🔚 Empty choices array - ending stream');
+                closeStream();
+                return;
+              }
+              
+              // Handle content from choices format
+              if (data.choices[0]?.delta?.content) {
+                const content = data.choices[0].delta.content;
+                console.log('📝 Legacy content:', content);
+                stream.update(JSON.stringify({ type: 'content', content }));
+              }
+              
+              if (data.choices[0]?.finish_reason) {
+                console.log('🏁 Legacy finish reason:', data.choices[0].finish_reason);
+                closeStream();
+                return;
+              }
+            } else {
+              // Pass through other data formats
+              stream.update(event.data);
             }
-            
-            if (data?.choices[0]?.finish_reason) {
-              stream.done();
-              eventSource.close();
-              return;
-            }
-            
-            // Pass through other data formats
-            stream.update(event.data);
         }
         
       } catch (error) {
-        console.error('Error parsing event data:', error);
+        console.error('❌ Error parsing event data:', error);
       }
     };
 
     // Handle EventSource errors
     eventSource.onerror = (error: any) => {
-      console.error('EventSource error:', error);
-      stream.error({ message: 'Connection error occurred - please try again' });
-      eventSource.close();
+      console.error('❌ EventSource error:', error);
+      if (!streamClosed) {
+        stream.error({ message: 'Connection error occurred - please try again' });
+        closeStream();
+      }
     };
 
     return { object: stream.value };
 
   } catch (error) {
-    console.error('Error in chat function:', error);
+    console.error('❌ Error in chat function:', error);
     
     // Create error response
     const stream = createStreamableValue();
