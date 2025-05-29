@@ -202,22 +202,38 @@ function removeDuplicateReferences(references: PDFReference[]): PDFReference[] {
   for (const ref of references) {
     // Check if this reference overlaps with any existing reference
     const hasOverlap = unique.some(existing => {
-      const overlapStart = Math.max(existing.matchIndex, ref.matchIndex);
-      const overlapEnd = Math.min(
-        existing.matchIndex + existing.fullMatch.length,
-        ref.matchIndex + ref.fullMatch.length
-      );
-      return overlapEnd > overlapStart;
+      // Check for exact match
+      if (existing.fullMatch === ref.fullMatch && existing.matchIndex === ref.matchIndex) {
+        return true;
+      }
+      
+      // Check for overlapping text ranges
+      const existingStart = existing.matchIndex;
+      const existingEnd = existing.matchIndex + existing.fullMatch.length;
+      const refStart = ref.matchIndex;
+      const refEnd = ref.matchIndex + ref.fullMatch.length;
+      
+      // If ranges overlap, keep the one with higher confidence
+      if ((refStart < existingEnd && refEnd > existingStart)) {
+        if (ref.confidence > existing.confidence) {
+          // Remove the existing lower-confidence reference
+          const index = unique.indexOf(existing);
+          unique.splice(index, 1);
+          return false; // Don't skip this reference
+        }
+        return true; // Skip this reference
+      }
+      
+      return false;
     });
     
     if (!hasOverlap) {
       unique.push(ref);
-    } else {
-      logger.debug('Skipping overlapping reference', { ref: ref.fullMatch });
     }
   }
   
-  return unique;
+  // Sort by position for consistent processing
+  return unique.sort((a, b) => a.matchIndex - b.matchIndex);
 }
 
 /**

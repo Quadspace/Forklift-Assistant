@@ -9,13 +9,27 @@ export async function GET(request: NextRequest) {
     logger.error('PDF proxy called without URL parameter');
     return NextResponse.json({ 
       error: 'Missing PDF URL parameter',
-      details: 'The "url" query parameter is required'
+      details: 'The "url" query parameter is required',
+      example: '/api/pdf-proxy?url=https://example.com/document.pdf'
     }, { status: 400 });
   }
 
   try {
     // Decode the URL and validate it
     const decodedUrl = decodeURIComponent(pdfUrl);
+    
+    // Basic URL validation before creating URL object
+    if (!decodedUrl.startsWith('http://') && !decodedUrl.startsWith('https://')) {
+      logger.error('Invalid URL protocol provided to PDF proxy', { 
+        originalUrl: pdfUrl,
+        decodedUrl
+      });
+      return NextResponse.json({ 
+        error: 'Invalid URL protocol',
+        details: `URLs must start with http:// or https://. Received: "${decodedUrl.substring(0, 50)}..."`,
+        originalUrl: pdfUrl
+      }, { status: 400 });
+    }
     
     // Validate URL format
     let urlObj;
@@ -29,8 +43,9 @@ export async function GET(request: NextRequest) {
       });
       return NextResponse.json({ 
         error: 'Invalid URL format',
-        details: `The provided URL "${decodedUrl}" is not a valid URL`,
-        originalUrl: pdfUrl
+        details: `The provided URL "${decodedUrl.substring(0, 100)}..." is not a valid URL`,
+        originalUrl: pdfUrl,
+        suggestion: 'Ensure the URL is properly encoded and includes protocol (http:// or https://)'
       }, { status: 400 });
     }
     

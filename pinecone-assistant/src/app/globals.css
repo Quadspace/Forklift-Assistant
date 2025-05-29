@@ -42,7 +42,7 @@ body {
   
   /* Ensure long content wraps properly */
   .break-long-words {
-    word-break: break-word;
+    word-break: break-all;
     overflow-wrap: anywhere;
     hyphens: auto;
   }
@@ -53,4 +53,62 @@ body {
     word-break: break-word;
     overflow-wrap: anywhere;
   }
+}
+
+/* Custom styles for better text wrapping and reference display */
+.reference-container {
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+}
+
+.pdf-reference-link {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.pdf-reference-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* Responsive reference text sizing */
+@media (max-width: 640px) {
+  .pdf-reference-text {
+    max-width: 200px;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 768px) {
+  .pdf-reference-text {
+    max-width: 300px;
+  }
+}
+
+@media (min-width: 769px) {
+  .pdf-reference-text {
+    max-width: 400px;
+  }
+}
+
+/* Ensure markdown content doesn't overflow */
+.markdown-content {
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+}
+
+.markdown-content a {
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.markdown-content span {
+  word-break: break-word;
+  overflow-wrap: break-word;
 }

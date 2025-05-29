@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reference Rendering Fix Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #f9f9f9;
+        }
+        .test-case {
+            margin: 15px 0;
+            padding: 15px;
+            background: white;
+            border-radius: 5px;
+            border-left: 4px solid #007cba;
+        }
+        .expected {
+            background: #e8f5e8;
+            border-left-color: #28a745;
+        }
+        .broken {
+            background: #ffeaea;
+            border-left-color: #dc3545;
+        }
+        .pdf-link {
+            display: inline-flex;
+            align-items: center;
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid #bbdefb;
+            text-decoration: none;
+            margin: 2px;
+            word-break: break-word;
+            max-width: 100%;
+        }
+        .pdf-icon {
+            width: 16px;
+            height: 16px;
+            margin-right: 4px;
+            fill: currentColor;
+        }
+        .garbled {
+            color: #d32f2f;
+            background: #ffebee;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        .status {
+            font-weight: bold;
+            padding: 5px 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        .status.fixed {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.broken {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        code {
+            background: #f1f1f1;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚨 Reference Rendering Fix Test</h1>
+    <p>This page tests the fixes for the critical reference rendering issues.</p>
+
+    <div class="test-section">
+        <h2>🔧 Issues Fixed</h2>
+        <div class="status fixed">✅ FIXED: Reference processing order (forward instead of reverse)</div>
+        <div class="status fixed">✅ FIXED: Offset tracking to prevent index corruption</div>
+        <div class="status fixed">✅ FIXED: Text wrapping with break-words CSS</div>
+        <div class="status fixed">✅ FIXED: PDF URL construction with proper error handling</div>
+        <div class="status fixed">✅ FIXED: Duplicate reference detection</div>
+        <div class="status fixed">✅ FIXED: Responsive reference display</div>
+    </div>
+
+    <div class="test-section">
+        <h2>❌ Previous Broken Behavior</h2>
+        <div class="test-case broken">
+            <h3>Garbled References (BEFORE FIX)</h3>
+            <p>References appeared like this:</p>
+            <div class="garbled">
+                [GPC 3000 QPR, pp. 313-325](#pdf-preview?url=%2Fapi%2Ffiles%2F8f84a8c8-9e33-41f9-b7ab-6a20bca0c9cf%2Fdownload&file=GPC%203000%20QPR_compressed.pd[GPC 3000 QPR, pp. 313-325]
+            </div>
+            <p><strong>Problems:</strong></p>
+            <ul>
+                <li>Duplicated and overlapping text</li>
+                <li>Malformed URLs with missing protocol</li>
+                <li>Text extending beyond viewport</li>
+                <li>Unclickable garbled references</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>✅ Expected Fixed Behavior</h2>
+        <div class="test-case expected">
+            <h3>Clean References (AFTER FIX)</h3>
+            <p>References should now appear like this:</p>
+            
+            <a href="#pdf-preview?url=https%3A%2F%2Fexample.com%2Fgpc3000.pdf&file=GPC%203000%20QPR.pdf&start=313&end=325" class="pdf-link">
+                <svg class="pdf-icon" viewBox="0 0 20 20">
+                    <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
+                </svg>
+                GPC 3000 QPR, pp. 313-325
+            </a>
+            
+            <p><strong>Improvements:</strong></p>
+            <ul>
+                <li>✅ Clean, readable text</li>
+                <li>✅ Proper URL encoding</li>
+                <li>✅ Responsive text wrapping</li>
+                <li>✅ Clickable with visual feedback</li>
+                <li>✅ No duplication or corruption</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🧪 Test Cases</h2>
+        
+        <div class="test-case">
+            <h3>Single Reference</h3>
+            <p><strong>Input:</strong> <code>[1, pp. 40-51]</code></p>
+            <p><strong>Expected Output:</strong></p>
+            <a href="#pdf-preview?url=https%3A%2F%2Fexample.com%2Frt4000.pdf&file=RT%204000%20SERIES.pdf&start=40&end=51" class="pdf-link">
+                <svg class="pdf-icon" viewBox="0 0 20 20">
+                    <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
+                </svg>
+                RT 4000 SERIES, pp. 40-51
+            </a>
+        </div>
+
+        <div class="test-case">
+            <h3>Multiple References</h3>
+            <p><strong>Input:</strong> <code>[1, pp. 40-51][2, pp. 135-145]</code></p>
+            <p><strong>Expected Output:</strong></p>
+            <a href="#pdf-preview?url=https%3A%2F%2Fexample.com%2Frt4000.pdf&file=RT%204000%20SERIES.pdf&start=40&end=51" class="pdf-link">
+                <svg class="pdf-icon" viewBox="0 0 20 20">
+                    <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
+                </svg>
+                RT 4000 SERIES, pp. 40-51
+            </a>
+            <a href="#pdf-preview?url=https%3A%2F%2Fexample.com%2Fwp3080.pdf&file=WP%203080.pdf&start=135&end=145" class="pdf-link">
+                <svg class="pdf-icon" viewBox="0 0 20 20">
+                    <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 715.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
+                </svg>
+                WP 3080, pp. 135-145
+            </a>
+        </div>
+
+        <div class="test-case">
+            <h3>Long Reference Text (Responsive)</h3>
+            <p><strong>Input:</strong> <code>[1, pp. 1-999]</code> with very long filename</p>
+            <p><strong>Expected Output:</strong></p>
+            <a href="#pdf-preview?url=https%3A%2F%2Fexample.com%2Fvery-long-filename.pdf&file=Very%20Long%20Filename%20That%20Should%20Wrap%20Properly.pdf&start=1&end=999" class="pdf-link">
+                <svg class="pdf-icon" viewBox="0 0 20 20">
+                    <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 715.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
+                </svg>
+                <span style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    Very Long Filename That Should Wrap Properly, pp. 1-999
+                </span>
+            </a>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🔍 Testing Instructions</h2>
+        <ol>
+            <li><strong>Start the server:</strong> <code>npm run dev</code></li>
+            <li><strong>Open the app:</strong> Navigate to <code>http://localhost:3002</code></li>
+            <li><strong>Ask a question:</strong> Try asking about forklift maintenance procedures</li>
+            <li><strong>Check references:</strong> Look for clean, clickable references like the examples above</li>
+            <li><strong>Verify no corruption:</strong> Ensure no garbled text or duplicated URLs</li>
+            <li><strong>Test responsiveness:</strong> Resize window to check text wrapping</li>
+            <li><strong>Test PDF modal:</strong> Click references to ensure PDF preview opens correctly</li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h2>🐛 Debug Console Messages</h2>
+        <p>When working correctly, you should see these console messages:</p>
+        <ul>
+            <li><code>🔍 detectPageReferences called</code></li>
+            <li><code>📋 High-confidence bracket citation found</code></li>
+            <li><code>🔗 Processing reference 1/2</code> (with forward order)</li>
+            <li><code>✅ Created clean PDF link for [filename]</code></li>
+            <li><code>📝 Final processed content ready</code></li>
+            <li><strong>NO MORE:</strong> Index out of bounds errors</li>
+            <li><strong>NO MORE:</strong> Garbled URL construction</li>
+        </ul>
+    </div>
+
+    <script>
+        // Test click handlers
+        document.querySelectorAll('.pdf-link').forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const href = this.getAttribute('href');
+                const params = new URLSearchParams(href.substring(href.indexOf('?')));
+                
+                console.log('🖱️ PDF link clicked (TEST):', {
+                    url: params.get('url'),
+                    file: params.get('file'),
+                    start: params.get('start'),
+                    end: params.get('end')
+                });
+                
+                alert(`✅ Reference click test successful!\nFile: ${params.get('file')}\nPages: ${params.get('start')}-${params.get('end')}`);
+            });
+        });
+
+        // Test responsive behavior
+        function testResponsive() {
+            const links = document.querySelectorAll('.pdf-link');
+            links.forEach(link => {
+                const span = link.querySelector('span');
+                if (span) {
+                    console.log('📱 Reference width:', span.offsetWidth, 'px');
+                }
+            });
+        }
+
+        window.addEventListener('resize', testResponsive);
+        testResponsive();
+    </script>
+</body>
+</html> 

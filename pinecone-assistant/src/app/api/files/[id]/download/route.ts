@@ -52,22 +52,70 @@ export async function GET(
 
     const fileInfo = fileInfoResponse.data;
     
-    if (!fileInfo || !fileInfo.signed_url) {
-      logger.error('File not found or no signed URL available', { fileId, assistantName });
+    if (!fileInfo) {
+      logger.error('File not found', { fileId, assistantName });
       return NextResponse.json({
         status: "error",
-        message: "File not found or no download URL available."
+        message: "File not found."
       }, { status: 404 });
     }
 
-    // Redirect to the signed URL
-    logger.info(`File download redirect successful`, { 
+    // If we have a signed URL, redirect to it
+    if (fileInfo.signed_url) {
+      logger.info(`File download redirect successful`, { 
+        fileId, 
+        fileName: fileInfo.name,
+        assistantName 
+      });
+      return NextResponse.redirect(fileInfo.signed_url);
+    }
+
+    // If no signed URL, try to construct one or return the file content directly
+    logger.warn('No signed URL available, attempting direct file access', { 
       fileId, 
-      fileName: fileInfo.name,
-      assistantName 
+      fileName: fileInfo.name 
     });
 
-    return NextResponse.redirect(fileInfo.signed_url);
+    // Try to get the file content directly from Pinecone
+    const fileContentResponse = await apiClient.request<ArrayBuffer>(
+      `${baseUrl}/assistant/files/${assistantName}/${fileId}/content`,
+      {
+        method: 'GET',
+        headers: {
+          'Api-Key': apiKey,
+          'Accept': 'application/pdf,application/octet-stream,*/*'
+        },
+        timeout: 30000,
+        retries: 1
+      }
+    );
+
+    if (fileContentResponse.data) {
+      // Return the file content directly with proper headers
+      const contentType = fileInfo.name?.toLowerCase().endsWith('.pdf') 
+        ? 'application/pdf' 
+        : 'application/octet-stream';
+
+      return new NextResponse(fileContentResponse.data, {
+        status: 200,
+        headers: {
+          'Content-Type': contentType,
+          'Content-Disposition': `inline; filename="${fileInfo.name || 'document.pdf'}"`,
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET',
+          'Access-Control-Allow-Headers': 'Content-Type',
+          'Cache-Control': 'public, max-age=3600',
+          'X-File-Source': 'Pinecone-Direct'
+        },
+      });
+    }
+
+    // If all else fails, return error
+    logger.error('File not found or no download URL available', { fileId, assistantName });
+    return NextResponse.json({
+      status: "error",
+      message: "File not found or no download URL available."
+    }, { status: 404 });
 
   } catch (error) {
     logger.error('Error downloading file', { 

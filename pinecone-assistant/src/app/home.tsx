@@ -623,14 +623,32 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
 
     logger.debug('✅ Found PDF references, processing message...');
     
-    // If we have references, process the message
+    // FIXED: Process references in FORWARD order with offset tracking
     let processedContent = cleanedContent;
-    // Process in reverse order to not affect indices
-    for (let i = references.length - 1; i >= 0; i--) {
-      const ref = references[i];
-      logger.debug(`🔗 Processing reference ${i + 1}`, { 
+    let offsetAdjustment = 0; // Track how much the content length has changed
+    
+    // Sort references by position (earliest first) to process in forward order
+    const sortedReferences = [...references].sort((a, b) => a.matchIndex - b.matchIndex);
+    
+    for (let i = 0; i < sortedReferences.length; i++) {
+      const ref = sortedReferences[i];
+      const adjustedIndex = ref.matchIndex + offsetAdjustment;
+      
+      // Bounds checking to prevent corruption
+      if (adjustedIndex < 0 || adjustedIndex >= processedContent.length) {
+        logger.warn(`⚠️ Reference index out of bounds, skipping`, { 
+          originalIndex: ref.matchIndex,
+          adjustedIndex,
+          contentLength: processedContent.length,
+          match: ref.fullMatch
+        });
+        continue;
+      }
+      
+      logger.debug(`🔗 Processing reference ${i + 1}/${sortedReferences.length}`, { 
         match: ref.fullMatch,
-        confidence: ref.confidence 
+        confidence: ref.confidence,
+        adjustedIndex
       });
       
       // Enhanced error handling for file matching
@@ -642,6 +660,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           error: error instanceof Error ? error.message : String(error),
           reference: ref.fullMatch 
         });
+        continue;
       }
       
       logger.debug(`📋 Matching file for reference`, { 
@@ -650,8 +669,8 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
       });
       
       if (matchingFile) {
-        const beforeRef = processedContent.substring(0, ref.matchIndex);
-        const afterRef = processedContent.substring(ref.matchIndex + ref.fullMatch.length);
+        const beforeRef = processedContent.substring(0, adjustedIndex);
+        const afterRef = processedContent.substring(adjustedIndex + ref.fullMatch.length);
         const pdfUrl = matchingFile.signed_url; 
         
         if (!pdfUrl) {
@@ -661,8 +680,13 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           const cleanFileName = fileNameOnly.replace('_compressed.pdf', '').replace('.pdf', '');
           const displayText = `${cleanFileName}, pp. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''} (Preview unavailable)`;
           
-          const fallbackSpan = `<span class="text-gray-500 dark:text-gray-400 italic">${displayText}</span>`;
-          processedContent = `${beforeRef}${fallbackSpan}${afterRef}`;
+          const fallbackSpan = `<span class="text-gray-500 dark:text-gray-400 italic break-words">${displayText}</span>`;
+          const newContent = `${beforeRef}${fallbackSpan}${afterRef}`;
+          
+          // Update offset tracking
+          offsetAdjustment += fallbackSpan.length - ref.fullMatch.length;
+          processedContent = newContent;
+          
           logger.debug(`⚠️ Created fallback reference for ${fileNameOnly} (no signed URL)`);
         } else {
           const fileNameOnly = matchingFile.name.split(/[\\/]/).pop() || matchingFile.name;
@@ -672,7 +696,12 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           const displayText = `${cleanFileName}, pp. ${ref.startPage}${ref.endPage !== ref.startPage ? `-${ref.endPage}` : ''}`;
           
           const pdfLink = `[${displayText}](#pdf-preview?url=${encodeURIComponent(pdfUrl)}&file=${encodeURIComponent(fileNameOnly)}&start=${ref.startPage}&end=${ref.endPage || ref.startPage})`;
-          processedContent = `${beforeRef}${pdfLink}${afterRef}`;
+          const newContent = `${beforeRef}${pdfLink}${afterRef}`;
+          
+          // Update offset tracking
+          offsetAdjustment += pdfLink.length - ref.fullMatch.length;
+          processedContent = newContent;
+          
           logger.debug(`✅ Created clean PDF link for ${fileNameOnly}`, { confidence: ref.confidence });
         }
       } else {
@@ -682,12 +711,17 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
         });
         
         // Create a generic reference when no file is found
-        const beforeRef = processedContent.substring(0, ref.matchIndex);
-        const afterRef = processedContent.substring(ref.matchIndex + ref.fullMatch.length);
+        const beforeRef = processedContent.substring(0, adjustedIndex);
+        const afterRef = processedContent.substring(adjustedIndex + ref.fullMatch.length);
         const displayText = `Document reference: ${ref.fullMatch} (File not available)`;
         
-        const fallbackSpan = `<span class="text-gray-500 dark:text-gray-400 italic">${displayText}</span>`;
-        processedContent = `${beforeRef}${fallbackSpan}${afterRef}`;
+        const fallbackSpan = `<span class="text-gray-500 dark:text-gray-400 italic break-words">${displayText}</span>`;
+        const newContent = `${beforeRef}${fallbackSpan}${afterRef}`;
+        
+        // Update offset tracking
+        offsetAdjustment += fallbackSpan.length - ref.fullMatch.length;
+        processedContent = newContent;
+        
         logger.debug(`⚠️ Created fallback reference for unmatched citation: ${ref.fullMatch}`);
       }
     }
@@ -695,7 +729,8 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
     logger.debug('📝 Final processed content ready', { 
       originalLength: content.length,
       processedLength: processedContent.length,
-      referencesProcessed: references.length
+      referencesProcessed: sortedReferences.length,
+      offsetAdjustment
     });
     
     return (
@@ -751,7 +786,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                     }
                   }}
                   title={`View ${fileNameForModal.replace('_compressed.pdf', '').replace('.pdf', '')} (pages ${startPage}${endPage && endPage !== startPage ? `-${endPage}` : ''})`}
-                  className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline inline-flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-700 shadow-sm transition-colors duration-200"
+                  className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline inline-flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-700 shadow-sm transition-colors duration-200 break-words max-w-full"
                 >
                   <svg
                     className="w-4 h-4 mr-1 flex-shrink-0"
@@ -761,12 +796,12 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
                   >
                     <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
                   </svg>
-                  <span className="truncate max-w-[200px] font-medium">{refText}</span>
+                  <span className="truncate max-w-[300px] sm:max-w-[400px] md:max-w-[500px] font-medium">{refText}</span>
                 </a>
               );
             }
             return (
-              <a {...props} href={href} className="text-blue-600 dark:text-blue-400 hover:underline">
+              <a {...props} href={href} className="text-blue-600 dark:text-blue-400 hover:underline break-words">
                 🔗 {props.children}
               </a>
             );
@@ -774,11 +809,12 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
           // Handle fallback spans for unavailable references
           span: ({ node, className, ...props }) => {
             if (className?.includes('text-gray-500')) {
-              return <span {...props} className={className} />;
+              return <span {...props} className={`${className} break-words max-w-full`} />;
             }
-            return <span {...props} />;
+            return <span {...props} className="break-words" />;
           },
         }}
+        className="break-words overflow-wrap-anywhere"
       >
         {processedContent}
       </ReactMarkdown>
@@ -816,7 +852,7 @@ export default function Home({ initialShowAssistantFiles, showCitations }: HomeP
             
             <div className="flex flex-col gap-4">
               <div className="w-full">
-                <div id="messages-container" className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg mb-4 h-[calc(100vh-300px)] overflow-y-auto overflow-x-hidden min-w-0 break-long-words">
+                <div id="messages-container" className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg mb-4 h-[calc(100vh-300px)] overflow-y-auto overflow-x-hidden min-w-0 break-long-words markdown-content">
                   {messages.map((message, index) => (
                     <div key={index} className={`mb-2 flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} min-w-0`}>
                       <div className={`flex items-start ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'} max-w-full min-w-0`}>
